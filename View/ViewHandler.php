@@ -11,21 +11,17 @@
 
 namespace FOS\RestBundle\View;
 
-use FOS\RestBundle\Context\Adapter\SerializationContextAdapterInterface;
-use FOS\RestBundle\Context\Adapter\SerializerAwareInterface;
-use FOS\RestBundle\Context\ContextInterface;
-use FOS\RestBundle\Context\GroupableContextInterface;
-use FOS\RestBundle\Context\SerializeNullContextInterface;
-use FOS\RestBundle\Context\VersionableContextInterface;
-use Symfony\Bundle\FrameworkBundle\Templating\TemplateReference;
-use Symfony\Component\DependencyInjection\ContainerAwareInterface;
-use Symfony\Component\DependencyInjection\ContainerAwareTrait;
+use FOS\RestBundle\Context\Context;
+use FOS\RestBundle\Serializer\Serializer;
+use Symfony\Bundle\FrameworkBundle\Templating\EngineInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
-use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Templating\TemplateReferenceInterface;
 
 /**
  * View may be used in controllers to build up a response in a format agnostic way
@@ -35,10 +31,8 @@ use Symfony\Component\Routing\RouterInterface;
  * @author Jordi Boggiano <j.boggiano@seld.be>
  * @author Lukas K. Smith <smith@pooteeweet.org>
  */
-class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInterface
+class ViewHandler implements ConfigurableViewHandlerInterface
 {
-    use ContainerAwareTrait;
-
     /**
      * Key format, value a callable that returns a Response instance.
      *
@@ -103,22 +97,30 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
      */
     protected $serializeNullStrategy;
 
-    /**
-     * @var SerializationContextAdapterInterface
-     */
-    protected $contextAdapter;
+    private $urlGenerator;
+    private $serializer;
+    private $templating;
+    private $requestStack;
 
     /**
      * Constructor.
      *
-     * @param array  $formats              the supported formats as keys and if the given formats uses templating is denoted by a true value
-     * @param int    $failedValidationCode The HTTP response status code for a failed validation
-     * @param int    $emptyContentCode     HTTP response status code when the view data is null
-     * @param bool   $serializeNull        Whether or not to serialize null view data
-     * @param array  $forceRedirects       If to force a redirect for the given key format, with value being the status code to use
-     * @param string $defaultEngine        default engine (twig, php ..)
+     * @param UrlGeneratorInterface $urlGenerator         The URL generator
+     * @param Serializer            $serializer
+     * @param EngineInterface       $templating           The configured templating engine
+     * @param RequestStack          $requestStack         The request stack
+     * @param array                 $formats              the supported formats as keys and if the given formats uses templating is denoted by a true value
+     * @param int                   $failedValidationCode The HTTP response status code for a failed validation
+     * @param int                   $emptyContentCode     HTTP response status code when the view data is null
+     * @param bool                  $serializeNull        Whether or not to serialize null view data
+     * @param array                 $forceRedirects       If to force a redirect for the given key format, with value being the status code to use
+     * @param string                $defaultEngine        default engine (twig, php ..)
      */
     public function __construct(
+        UrlGeneratorInterface $urlGenerator,
+        Serializer $serializer,
+        EngineInterface $templating,
+        RequestStack $requestStack,
         array $formats = null,
         $failedValidationCode = Response::HTTP_BAD_REQUEST,
         $emptyContentCode = Response::HTTP_NO_CONTENT,
@@ -126,6 +128,10 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
         array $forceRedirects = null,
         $defaultEngine = 'twig'
     ) {
+        $this->urlGenerator = $urlGenerator;
+        $this->serializer = $serializer;
+        $this->templating = $templating;
+        $this->requestStack = $requestStack;
         $this->formats = (array) $formats;
         $this->failedValidationCode = $failedValidationCode;
         $this->emptyContentCode = $emptyContentCode;
@@ -141,7 +147,7 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
      */
     public function setExclusionStrategyGroups($groups)
     {
-        $this->exclusionStrategyGroups = $groups;
+        $this->exclusionStrategyGroups = (array) $groups;
     }
 
     /**
@@ -162,16 +168,6 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
     public function setSerializeNullStrategy($isEnabled)
     {
         $this->serializeNullStrategy = $isEnabled;
-    }
-
-    /**
-     * Sets context adapter.
-     *
-     * @param SerializationContextAdapterInterface $contextAdapter
-     */
-    public function setSerializationContextAdapter(SerializationContextAdapterInterface $contextAdapter)
-    {
-        $this->contextAdapter = $contextAdapter;
     }
 
     /**
@@ -223,8 +219,9 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
             return $this->failedValidationCode;
         }
 
-        if (200 !== ($code = $view->getStatusCode())) {
-            return $code;
+        $statusCode = $view->getStatusCode();
+        if (null !== $statusCode) {
+            return $statusCode;
         }
 
         return null !== $content ? Response::HTTP_OK : $this->emptyContentCode;
@@ -243,65 +240,31 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
     }
 
     /**
-     * Gets the router service.
-     *
-     * @return RouterInterface
-     */
-    protected function getRouter()
-    {
-        return $this->container->get('fos_rest.router');
-    }
-
-    /**
-     * Gets the serializer service.
-     *
-     * @param View $view view instance from which the serializer should be configured
-     *
-     * @return object that must provide a "serialize()" method
-     */
-    protected function getSerializer(View $view = null)
-    {
-        return $this->container->get('fos_rest.serializer');
-    }
-
-    /**
      * Gets or creates a JMS\Serializer\SerializationContext and initializes it with
      * the view exclusion strategies, groups & versions if a new context is created.
      *
      * @param View $view
      *
-     * @return ContextInterface
+     * @return Context
      */
     protected function getSerializationContext(View $view)
     {
-        $context = $view->getSerializationContext();
+        $context = $view->getContext();
 
-        if ($context instanceof GroupableContextInterface) {
-            $groups = $context->getGroups();
-            if (empty($groups) && $this->exclusionStrategyGroups) {
-                $context->addGroups((array) $this->exclusionStrategyGroups);
-            }
+        $groups = $context->getGroups();
+        if (empty($groups) && $this->exclusionStrategyGroups) {
+            $context->addGroups($this->exclusionStrategyGroups);
         }
 
-        if ($context instanceof VersionableContextInterface && null === $context->getVersion() && $this->exclusionStrategyVersion) {
+        if (null === $context->getVersion() && $this->exclusionStrategyVersion) {
             $context->setVersion($this->exclusionStrategyVersion);
         }
 
-        if ($context instanceof SerializeNullContextInterface && null === $context->getSerializeNull()) {
+        if (null === $context->getSerializeNull() && null !== $this->serializeNullStrategy) {
             $context->setSerializeNull($this->serializeNullStrategy);
         }
 
         return $context;
-    }
-
-    /**
-     * Gets the templating service.
-     *
-     * @return \Symfony\Bundle\FrameworkBundle\Templating\EngineInterface
-     */
-    protected function getTemplating()
-    {
-        return $this->container->get('fos_rest.templating');
     }
 
     /**
@@ -319,7 +282,7 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
     public function handle(View $view, Request $request = null)
     {
         if (null === $request) {
-            $request = $this->container->get('request_stack')->getCurrentRequest();
+            $request = $this->requestStack->getCurrentRequest();
         }
 
         $format = $view->getFormat() ?: $request->getRequestFormat();
@@ -348,7 +311,7 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
     public function createRedirectResponse(View $view, $location, $format)
     {
         $content = null;
-        if (($view->getStatusCode() == Response::HTTP_CREATED || $view->getStatusCode() == Response::HTTP_ACCEPTED) && $view->getData() != null) {
+        if (($view->getStatusCode() === Response::HTTP_CREATED || $view->getStatusCode() === Response::HTTP_ACCEPTED) && $view->getData() !== null) {
             $response = $this->initResponse($view, $format);
         } else {
             $response = $view->getResponse();
@@ -381,7 +344,7 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
         $data = $this->prepareTemplateParameters($view);
 
         $template = $view->getTemplate();
-        if ($template instanceof TemplateReference) {
+        if ($template instanceof TemplateReferenceInterface) {
             if (null === $template->get('format')) {
                 $template->set('format', $format);
             }
@@ -392,7 +355,7 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
             }
         }
 
-        return $this->getTemplating()->render($template, $data);
+        return $this->templating->render($template, $data);
     }
 
     /**
@@ -436,8 +399,9 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
     public function createResponse(View $view, Request $request, $format)
     {
         $route = $view->getRoute();
+
         $location = $route
-            ? $this->getRouter()->generate($route, (array) $view->getRouteParameters(), RouterInterface::ABSOLUTE_URL)
+            ? $this->urlGenerator->generate($route, (array) $view->getRouteParameters(), UrlGeneratorInterface::ABSOLUTE_URL)
             : $view->getLocation();
 
         if ($location) {
@@ -468,14 +432,15 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
             $content = $this->renderTemplate($view, $format);
         } elseif ($this->serializeNull || null !== $view->getData()) {
             $data = $this->getDataFromView($view);
-            $serializer = $this->getSerializer($view);
 
-            $standardContext = $this->getSerializationContext($view);
-            if ($this->contextAdapter instanceof SerializerAwareInterface) {
-                $this->contextAdapter->setSerializer($serializer);
+            if ($data instanceof FormInterface && $data->isSubmitted() && !$data->isValid()) {
+                $view->getContext()->setAttribute('status_code', $this->failedValidationCode);
             }
-            $context = $this->contextAdapter->convertSerializationContext($standardContext);
-            $content = $serializer->serialize($data, $format, $context);
+
+            $context = $this->getSerializationContext($view);
+            $context->setAttribute('template_data', $view->getTemplateData());
+
+            $content = $this->serializer->serialize($data, $format, $context);
         }
 
         $response = $view->getResponse();
@@ -511,7 +476,7 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
     }
 
     /**
-     * Returns the data from a view. If the data is form with errors, it will return it wrapped in an ExceptionWrapper.
+     * Returns the data from a view.
      *
      * @param View $view
      *
@@ -525,19 +490,6 @@ class ViewHandler implements ConfigurableViewHandlerInterface, ContainerAwareInt
             return $view->getData();
         }
 
-        if ($form->isValid() || !$form->isSubmitted()) {
-            return $form;
-        }
-
-        /** @var ExceptionWrapperHandlerInterface $exceptionWrapperHandler */
-        $exceptionWrapperHandler = $this->container->get('fos_rest.exception_handler');
-
-        return $exceptionWrapperHandler->wrap(
-            [
-                 'status_code' => $this->failedValidationCode,
-                 'message' => 'Validation Failed',
-                 'errors' => $form,
-            ]
-        );
+        return $form;
     }
 }

@@ -47,7 +47,7 @@ class AbstractScalarParamTest extends \PHPUnit_Framework_TestCase
 
     public function testComplexRequirements()
     {
-        $this->param->requirements = $requirement = $this->getMock('Symfony\Component\Validator\Constraint');
+        $this->param->requirements = $requirement = $this->getMockBuilder('Symfony\Component\Validator\Constraint')->getMock();
         $this->assertEquals(array(
             new Constraints\NotNull(),
             $requirement,
@@ -96,6 +96,15 @@ class AbstractScalarParamTest extends \PHPUnit_Framework_TestCase
         $this->param->map = true;
         $this->assertEquals(array(new Constraints\All(array(
             new Constraints\NotNull(),
+        ))), $this->param->getConstraints());
+    }
+
+    public function testArrayWithNoConstraintsDoesNotCreateInvalidConstraint()
+    {
+        $this->param->nullable = true;
+        $this->param->map = true;
+        $this->assertEquals(array(new Constraints\All(array(
+            'constraints' => [],
         ))), $this->param->getConstraints());
     }
 }

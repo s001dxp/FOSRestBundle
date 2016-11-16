@@ -14,6 +14,8 @@ configured for the matched controller so that the user does not need to do this 
 
     <?php
 
+    namespace AppBundle\Controller;
+
     use FOS\RestBundle\Request\ParamFetcher;
     use FOS\RestBundle\Controller\Annotations\RequestParam;
     use FOS\RestBundle\Controller\Annotations\QueryParam;
@@ -37,7 +39,7 @@ configured for the matched controller so that the user does not need to do this 
          * If you set the strict parameter without a nullable option, this will result in an error if the parameter is
          * missing from the query.
          *
-         * @QueryParam(name="sort", requirements="(asc|desc)+", allowBlank=false, default="asc", description="Sort direction")
+         * @QueryParam(name="sort", requirements="(asc|desc)", allowBlank=false, default="asc", description="Sort direction")
          * Will check if a blank value, e.g an empty string is passed and if so, it will set to the default of asc.
          *
          * @RequestParam(name="firstname", requirements="[a-z]+", description="Firstname.")
@@ -86,7 +88,7 @@ configured for the matched controller so that the user does not need to do this 
          * See all file possible requirements: http://symfony.com/doc/current/reference/constraints/File.html
          *
          * @FileParam(name="avatar", requirements={"mimeTypes"="application/json", "minWidth"="200"}, image=true)
-         * The ParamFetcher will throw an error if the file passed is not an image and is not larger than 2O0px.
+         * The ParamFetcher will throw an error if the file passed is not an image and is not larger than 200px.
          * See all image possible requirements: http://symfony.com/doc/current/reference/constraints/Image.html
          *
          * @FileParam(name="identityCard", image=true, default="noPicture")
@@ -138,6 +140,8 @@ request attributes
 
     <?php
 
+    namespace AppBundle\Controller;
+
     class FooController extends Controller
     {
         /**
@@ -163,6 +167,8 @@ Container parameters can be used in requirements and default field.
 .. code-block:: php
 
     <?php
+
+    namespace AppBundle\Controller;
 
     class FooController extends Controller
     {

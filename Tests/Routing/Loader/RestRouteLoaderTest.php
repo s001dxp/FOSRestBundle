@@ -30,7 +30,7 @@ class RestRouteLoaderTest extends LoaderTest
         $etalonRoutes = $this->loadEtalonRoutesInfo('users_controller.yml');
 
         $this->assertTrue($collection instanceof RestRouteCollection);
-        $this->assertEquals(26, count($collection->all()));
+        $this->assertEquals(32, count($collection->all()));
 
         foreach ($etalonRoutes as $name => $params) {
             $route = $collection->get($name);
@@ -96,7 +96,7 @@ class RestRouteLoaderTest extends LoaderTest
         $etalonRoutes = $this->loadEtalonRoutesInfo('annotated_users_controller.yml');
 
         $this->assertTrue($collection instanceof RestRouteCollection);
-        $this->assertEquals(24, count($collection->all()));
+        $this->assertEquals(31, count($collection->all()));
 
         foreach ($etalonRoutes as $name => $params) {
             $route = $collection->get($name);
@@ -173,7 +173,7 @@ class RestRouteLoaderTest extends LoaderTest
         $etalonRoutes = $this->loadEtalonRoutesInfo('annotated_version_controller.yml');
 
         $this->assertTrue($collection instanceof RestRouteCollection);
-        $this->assertEquals(2, count($collection->all()));
+        $this->assertEquals(3, count($collection->all()));
 
         foreach ($etalonRoutes as $name => $params) {
             $route = $collection->get($name);
@@ -340,6 +340,24 @@ class RestRouteLoaderTest extends LoaderTest
 
         $this->assertNotNull($collection->get('post_users_foo'), 'route for "post_users_foo" does not exist');
         $this->assertNotNull($collection->get('post_users_bar'), 'route for "post_users_bar" does not exist');
+    }
+
+    /**
+     * RestActionReader::getMethodArguments should ignore certain types of
+     * parameters.
+     */
+    public function testRequestTypeHintsIgnoredCorrectly()
+    {
+        $collection = $this->loadFromControllerFixture('TypeHintedController');
+
+        $this->assertNotNull($collection->get('get_articles'), 'route for "get_articles" does not exist');
+        $this->assertEquals('/articles.{_format}', $collection->get('get_articles')->getPath());
+        $this->assertNotNull($collection->get('post_articles'), 'route for "post_articles" does not exist');
+        $this->assertEquals('/articles.{_format}', $collection->get('post_articles')->getPath());
+        $this->assertNotNull($collection->get('get_article'), 'route for "get_article" does not exist');
+        $this->assertEquals('/articles/{id}.{_format}', $collection->get('get_article')->getPath());
+        $this->assertNotNull($collection->get('post_article'), 'route for "post_article" does not exist');
+        $this->assertEquals('/articles/{id}.{_format}', $collection->get('post_article')->getPath());
     }
 
     /**

@@ -12,6 +12,8 @@
 namespace FOS\RestBundle\Tests\Request;
 
 use Symfony\Component\HttpFoundation\Request;
+use FOS\RestBundle\Context\Context;
+use FOS\RestBundle\Request\RequestBodyParamConverter;
 
 /**
  * @author Tyler Stroud <tyler@tylerstroud.com>
@@ -38,25 +40,14 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
             );
         }
 
-        $this->serializer = $this->getMock('SerializerInterface', ['deserialize']);
-        $this->converterBuilder = $this->getConverterBuilder()
-             ->setMethods(null)
-             ->setConstructorArgs([$this->serializer]);
+        $this->serializer = $this->getMockBuilder('FOS\RestBundle\Serializer\Serializer')->getMock();
+        $this->converter = new RequestBodyParamConverter($this->serializer);
     }
 
     public function testInterface()
     {
-        $converter = $this->converterBuilder->getMock();
+        $converter = new RequestBodyParamConverter($this->serializer);
         $this->assertInstanceOf('Sensio\Bundle\FrameworkExtraBundle\Request\ParamConverter\ParamConverterInterface', $converter);
-    }
-
-    public function testDeserializationContextGetting()
-    {
-        $converter = $this->converterBuilder->getMock();
-
-        $getterMethod = new \ReflectionMethod($converter, 'getDeserializationContext');
-        $getterMethod->setAccessible(true);
-        $this->assertInstanceOf('FOS\RestBundle\Context\ContextInterface', $getterMethod->invoke($converter, $this->createRequest()));
     }
 
     public function testContextMergeDuringExecution()
@@ -68,42 +59,16 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
             ],
         ];
         $configuration = $this->createConfiguration(null, null, $options);
-        $converter = $this->converterBuilder
-             ->setConstructorArgs([$this->serializer, 'foogroup', 'fooversion'])
-             ->setMethods(['configureDeserializationContext'])
+        $converter = $this->getMockBuilder(RequestBodyParamConverter::class)
+             ->setConstructorArgs([$this->serializer, ['foogroup'], 'fooversion'])
+             ->setMethods(['configureContext'])
              ->getMock();
-        $converter->setDeserializationContextAdapter($this->getMock('FOS\RestBundle\Context\Adapter\DeserializationContextAdapterInterface'));
         $converter
             ->expects($this->once())
-            ->method('configureDeserializationContext')
+            ->method('configureContext')
             ->with($this->anything(), ['groups' => ['foo', 'bar'], 'foobar' => 'foo', 'version' => 'fooversion'])
-            ->willReturn($this->getMock('FOS\RestBundle\Context\ContextInterface'));
+            ->willReturn(new Context());
         $this->launchExecution($converter, null, $configuration);
-    }
-
-    public function testSerializerTransmissionToTheContextAdapter()
-    {
-        $adapter = $this->getMock('FOS\RestBundle\Tests\Fixtures\Context\Adapter\SerializerAwareAdapter');
-        $adapter
-            ->expects($this->once())
-            ->method('setSerializer');
-        $adapter
-            ->expects($this->once())
-            ->method('convertDeserializationContext');
-        $converter = $this->converterBuilder->getMock();
-        $converter->setDeserializationContextAdapter($adapter);
-        $this->launchExecution($converter);
-    }
-
-    public function testSerializerParameters()
-    {
-        $converter = $this->converterBuilder->getMock();
-        $converter->setDeserializationContextAdapter($this->getMock('FOS\RestBundle\Context\Adapter\DeserializationContextAdapterInterface'));
-        $this->serializer
-            ->expects($this->once())
-            ->method('deserialize')
-            ->with('body', 'FooClass', 'json');
-        $this->launchExecution($converter);
     }
 
     /**
@@ -111,8 +76,7 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
      */
     public function testExecutionInterceptsUnsupportedFormatException()
     {
-        $converter = $this->converterBuilder->getMock();
-        $converter->setDeserializationContextAdapter($this->getMock('FOS\RestBundle\Context\Adapter\DeserializationContextAdapterInterface'));
+        $converter = new RequestBodyParamConverter($this->serializer);
         $this->serializer
             ->expects($this->once())
             ->method('deserialize')
@@ -125,8 +89,7 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
      */
     public function testExecutionInterceptsJMSException()
     {
-        $converter = $this->converterBuilder->getMock();
-        $converter->setDeserializationContextAdapter($this->getMock('FOS\RestBundle\Context\Adapter\DeserializationContextAdapterInterface'));
+        $converter = new RequestBodyParamConverter($this->serializer);
         $this->serializer
             ->expects($this->once())
             ->method('deserialize')
@@ -139,8 +102,7 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
      */
     public function testExecutionInterceptsSymfonySerializerException()
     {
-        $converter = $this->converterBuilder->getMock();
-        $converter->setDeserializationContextAdapter($this->getMock('FOS\RestBundle\Context\Adapter\DeserializationContextAdapterInterface'));
+        $converter = new RequestBodyParamConverter($this->serializer);
         $this->serializer
             ->expects($this->once())
             ->method('deserialize')
@@ -150,8 +112,7 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
 
     public function testRequestAttribute()
     {
-        $converter = $this->converterBuilder->getMock();
-        $converter->setDeserializationContextAdapter($this->getMock('FOS\RestBundle\Context\Adapter\DeserializationContextAdapterInterface'));
+        $converter = new RequestBodyParamConverter($this->serializer);
         $this->serializer
              ->expects($this->once())
              ->method('deserialize')
@@ -163,25 +124,20 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
 
     public function testValidatorParameters()
     {
-        if (!interface_exists('Symfony\Component\Validator\Validator\ValidatorInterface')) {
-            $this->markTestSkipped(
-                'skipping testValidatorParameters due to an incompatible version of the Symfony validator component'
-            );
-        }
         $this->serializer
              ->expects($this->once())
              ->method('deserialize')
              ->willReturn('Object');
-        $validator = $this->getMock('Symfony\Component\Validator\Validator\ValidatorInterface');
+
+        $validator = $this->getMockBuilder('Symfony\Component\Validator\Validator\ValidatorInterface')->getMock();
         $validator
             ->expects($this->once())
             ->method('validate')
             ->with('Object', null, ['foo'])
             ->willReturn('fooError');
-        $converter = $this->converterBuilder
-            ->setConstructorArgs([$this->serializer, null, null, $validator, 'errors'])
-            ->getMock();
-        $converter->setDeserializationContextAdapter($this->getMock('FOS\RestBundle\Context\Adapter\DeserializationContextAdapterInterface'));
+
+        $converter = new RequestBodyParamConverter($this->serializer, null, null, $validator, 'errors');
+
         $request = $this->createRequest();
         $configuration = $this->createConfiguration(null, null, ['validator' => ['groups' => ['foo']]]);
         $this->launchExecution($converter, $request, $configuration);
@@ -190,47 +146,60 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
 
     public function testReturn()
     {
-        $converter = $this->converterBuilder->getMock();
-        $converter->setDeserializationContextAdapter($this->getMock('FOS\RestBundle\Context\Adapter\DeserializationContextAdapterInterface'));
+        $converter = new RequestBodyParamConverter($this->serializer);
         $this->assertTrue($this->launchExecution($converter));
     }
 
     public function testContextConfiguration()
     {
-        $converter = $this->converterBuilder->getMock();
+        $converter = new RequestBodyParamConverter($this->serializer);
         $options = [
             'groups' => ['foo', 'bar'],
             'version' => 'v1.2',
-            'maxDepth' => 5,
+            'enableMaxDepth' => true,
             'serializeNull' => false,
             'foo' => 'bar',
         ];
-        $context = $this->getMock('FOS\RestBundle\Context\Context');
-        $context
-            ->expects($this->once())
-            ->method('addGroups')
-            ->with($options['groups']);
-        $context
-            ->expects($this->once())
-            ->method('setVersion')
-            ->with($options['version']);
-        $context
-            ->expects($this->once())
-            ->method('setMaxDepth')
-            ->with($options['maxDepth']);
-        $context
-            ->expects($this->once())
-            ->method('setSerializeNull')
-            ->with($options['serializeNull']);
 
-        $contextConfigurationMethod = new \ReflectionMethod($converter, 'configureDeserializationContext');
+        $contextConfigurationMethod = new \ReflectionMethod($converter, 'configureContext');
         $contextConfigurationMethod->setAccessible(true);
-        $contextConfigurationMethod->invoke($converter, $context, $options);
+        $contextConfigurationMethod->invoke($converter, $context = new Context(), $options);
+
+        $expectedContext = new Context();
+        $expectedContext
+            ->addGroups($options['groups'])
+            ->setVersion($options['version'])
+            ->enableMaxDepth($options['enableMaxDepth'])
+            ->setSerializeNull($options['serializeNull'])
+            ->setAttribute('foo', 'bar');
+
+        $this->assertEquals($expectedContext, $context);
+    }
+
+    /**
+     * @group legacy
+     */
+    public function testMaxDepthContextConfiguration()
+    {
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $options = [
+            'maxDepth' => 5,
+        ];
+
+        $contextConfigurationMethod = new \ReflectionMethod($converter, 'configureContext');
+        $contextConfigurationMethod->setAccessible(true);
+        $contextConfigurationMethod->invoke($converter, $context = new Context(), $options);
+
+        $expectedContext = new Context();
+        $expectedContext
+            ->setMaxDepth($options['maxDepth']);
+
+        $this->assertEquals($expectedContext, $context);
     }
 
     public function testValidatorOptionsGetter()
     {
-        $converter = $this->converterBuilder->getMock();
+        $converter = new RequestBodyParamConverter($this->serializer);
 
         $options1 = [
             'validator' => [
@@ -252,14 +221,14 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
 
     public function testSupports()
     {
-        $converter = $this->converterBuilder->getMock();
+        $converter = new RequestBodyParamConverter($this->serializer);
         $config = $this->createConfiguration('FOS\RestBundle\Tests\Request\Post', 'post');
         $this->assertTrue($converter->supports($config));
     }
 
     public function testSupportsWithNoClass()
     {
-        $converter = $this->converterBuilder->getMock();
+        $converter = new RequestBodyParamConverter($this->serializer);
         $this->assertFalse($converter->supports($this->createConfiguration(null, 'post')));
     }
 
@@ -317,10 +286,5 @@ class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
         $request->headers->set('CONTENT_TYPE', $contentType);
 
         return $request;
-    }
-
-    protected function getConverterBuilder()
-    {
-        return $this->getMockBuilder('FOS\RestBundle\Request\RequestBodyParamConverter');
     }
 }

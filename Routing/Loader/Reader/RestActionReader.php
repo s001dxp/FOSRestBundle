@@ -14,10 +14,10 @@ namespace FOS\RestBundle\Routing\Loader\Reader;
 use Doctrine\Common\Annotations\Reader;
 use FOS\RestBundle\Controller\Annotations\Route as RouteAnnotation;
 use FOS\RestBundle\Inflector\InflectorInterface;
-use FOS\RestBundle\Request\ParamReader;
-use FOS\RestBundle\Routing\RestRouteCollection;
-use Symfony\Component\Routing\Route;
 use FOS\RestBundle\Request\ParamReaderInterface;
+use FOS\RestBundle\Routing\RestRouteCollection;
+use Psr\Http\Message\MessageInterface;
+use Symfony\Component\Routing\Route;
 
 /**
  * REST controller actions reader.
@@ -28,17 +28,81 @@ class RestActionReader
 {
     const COLLECTION_ROUTE_PREFIX = 'c';
 
+    /**
+     * @var Reader
+     */
     private $annotationReader;
+
+    /**
+     * @var ParamReaderInterface
+     */
     private $paramReader;
+
+    /**
+     * @var InflectorInterface
+     */
     private $inflector;
+
+    /**
+     * @var array
+     */
     private $formats;
+
+    /**
+     * @var bool
+     */
     private $includeFormat;
+
+    /**
+     * @var string|null
+     */
     private $routePrefix;
+
+    /**
+     * @var string|null
+     */
     private $namePrefix;
+
+    /**
+     * @var array|string|null
+     */
     private $versions;
+
+    /**
+     * @var bool|null
+     */
     private $pluralize;
+
+    /**
+     * @var array
+     */
     private $parents = [];
-    private $availableHTTPMethods = ['get', 'post', 'put', 'patch', 'delete', 'link', 'unlink', 'head', 'options'];
+
+    /**
+     * @var array
+     */
+    private $availableHTTPMethods = [
+        'get',
+        'post',
+        'put',
+        'patch',
+        'delete',
+        'link',
+        'unlink',
+        'head',
+        'options',
+        'mkcol',
+        'propfind',
+        'proppatch',
+        'move',
+        'copy',
+        'lock',
+        'unlock',
+    ];
+
+    /**
+     * @var array
+     */
     private $availableConventionalActions = ['new', 'edit', 'remove'];
 
     /**
@@ -229,7 +293,7 @@ class RestActionReader
         $requirements = [];
         $options = [];
         $host = '';
-        $condition = null;
+        $versionCondition = $this->getVersionCondition();
 
         $annotations = $this->readRouteAnnotation($method);
         if (!empty($annotations)) {
@@ -253,13 +317,13 @@ class RestActionReader
                 $defaults = array_merge($defaults, $annotation->getDefaults());
                 $host = $annotation->getHost();
                 $schemes = $annotation->getSchemes();
-                $condition = $this->getCondition($method, $annotation);
+                $combinedCondition = $this->combineConditions($versionCondition, $annotation->getCondition());
 
                 $this->includeFormatIfNeeded($path, $requirements);
 
                 // add route to collection
                 $route = new Route(
-                    $path, $defaults, $requirements, $options, $host, $schemes, $methods, $condition
+                    $path, $defaults, $requirements, $options, $host, $schemes, $methods, $combinedCondition
                 );
                 $this->addRoute($collection, $routeName, $route, $isCollection, $isInflectable, $annotation);
             }
@@ -270,39 +334,41 @@ class RestActionReader
 
             // add route to collection
             $route = new Route(
-                $path, $defaults, $requirements, $options, $host, [], $methods, $condition
+                $path, $defaults, $requirements, $options, $host, [], $methods, $versionCondition
             );
             $this->addRoute($collection, $routeName, $route, $isCollection, $isInflectable);
         }
     }
 
     /**
-     * Determine the Route condition by combining Route annotations with Version annotation.
-     *
-     * @param \ReflectionMethod $method
-     * @param RouteAnnotation   $annotation
-     *
-     * @return string
+     * @return string|null
      */
-    private function getCondition(\ReflectionMethod $method, RouteAnnotation $annotation)
+    private function getVersionCondition()
     {
-        $condition = $annotation->getCondition();
-
-        if (!empty($this->versions)) {
-            $versionCondition = "request.attributes.get('version') == (";
-            $first = true;
-            foreach ($this->versions as $version) {
-                if (!$first) {
-                    $versionCondition .= ' or ';
-                }
-                $versionCondition .= '\''.$version.'\'';
-                $first = false;
-            }
-            $versionCondition .= ')';
-            $condition = $condition ? '('.$condition.') and '.$versionCondition : $versionCondition;
+        if (empty($this->versions)) {
+            return;
         }
 
-        return $condition;
+        return sprintf("request.attributes.get('version') in ['%s']", implode("', '", $this->versions));
+    }
+
+    /**
+     * @param string|null $conditionOne
+     * @param string|null $conditionTwo
+     *
+     * @return string|null
+     */
+    private function combineConditions($conditionOne, $conditionTwo)
+    {
+        if (null === $conditionOne) {
+            return $conditionTwo;
+        }
+
+        if (null === $conditionTwo) {
+            return $conditionOne;
+        }
+
+        return sprintf('(%s) and (%s)', $conditionOne, $conditionTwo);
     }
 
     /**
@@ -339,7 +405,7 @@ class RestActionReader
         $hasNoRouteMethod = (bool) $this->readMethodAnnotation($method, 'NoRoute');
         $hasNoRouteClass = (bool) $this->readClassAnnotation($method->getDeclaringClass(), 'NoRoute');
 
-        $hasNoRoute = $hasNoRoute = $hasNoRouteMethod || $hasNoRouteClass;
+        $hasNoRoute = $hasNoRouteMethod || $hasNoRouteClass;
         // since NoRoute extends Route we need to exclude all the method NoRoute annotations
         $hasRoute = (bool) $this->readMethodAnnotation($method, 'Route') && !$hasNoRouteMethod;
 
@@ -415,15 +481,13 @@ class RestActionReader
         // ignore all query params
         $params = $this->paramReader->getParamsFromMethod($method);
 
-        // ignore type hinted arguments that are or extend from:
-        // * Symfony\Component\HttpFoundation\Request
-        // * FOS\RestBundle\Request\QueryFetcher
-        // * Symfony\Component\Validator\ConstraintViolationList
+        // ignore several type hinted arguments
         $ignoreClasses = [
-            'Symfony\Component\HttpFoundation\Request',
-            'FOS\RestBundle\Request\ParamFetcherInterface',
-            'Symfony\Component\Validator\ConstraintViolationListInterface',
-            'Sensio\Bundle\FrameworkExtraBundle\Configuration\ParamConverter',
+            \Symfony\Component\HttpFoundation\Request::class,
+            \FOS\RestBundle\Request\ParamFetcherInterface::class,
+            \Symfony\Component\Validator\ConstraintViolationListInterface::class,
+            \Sensio\Bundle\FrameworkExtraBundle\Configuration\ParamConverter::class,
+            MessageInterface::class,
         ];
 
         $arguments = [];
@@ -434,8 +498,9 @@ class RestActionReader
 
             $argumentClass = $argument->getClass();
             if ($argumentClass) {
+                $className = $argumentClass->getName();
                 foreach ($ignoreClasses as $class) {
-                    if ($argumentClass->getName() === $class || $argumentClass->isSubclassOf($class)) {
+                    if ($className === $class || is_subclass_of($className, $class)) {
                         continue 2;
                     }
                 }
@@ -548,7 +613,7 @@ class RestActionReader
             return 'get';
         }
 
-        //custom object
+        // custom object
         return 'patch';
     }
 
@@ -563,10 +628,8 @@ class RestActionReader
     {
         $annotations = [];
 
-        foreach (['Route', 'Get', 'Post', 'Put', 'Patch', 'Delete', 'Link', 'Unlink', 'Head', 'Options'] as $annotationName) {
-            if ($annotations_new = $this->readMethodAnnotations($reflectionMethod, $annotationName)) {
-                $annotations = array_merge($annotations, $annotations_new);
-            }
+        if ($newAnnotations = $this->readMethodAnnotations($reflectionMethod, 'Route')) {
+            $annotations = array_merge($annotations, $newAnnotations);
         }
 
         return $annotations;

@@ -12,6 +12,7 @@
 namespace FOS\RestBundle\Tests\Normalizer;
 
 use FOS\RestBundle\Normalizer\CamelKeysNormalizer;
+use FOS\RestBundle\Normalizer\CamelKeysNormalizerWithLeadingUnderscore;
 
 class CamelKeysNormalizerTest extends \PHPUnit_Framework_TestCase
 {
@@ -40,16 +41,41 @@ class CamelKeysNormalizerTest extends \PHPUnit_Framework_TestCase
 
     public function normalizeProvider()
     {
-        return [
-            [[], []],
-            [
-                ['foo' => ['Foo_bar_baz' => ['foo_Bar' => ['foo_bar' => 'foo_bar']]],
-                    'foo_1ar' => ['foo_bar'],
-                ],
-                ['foo' => ['FooBarBaz' => ['fooBar' => ['fooBar' => 'foo_bar']]],
-                    'foo1ar' => ['foo_bar'],
-                ],
-            ],
-        ];
+        $array = $this->normalizeProviderCommon();
+        $array[] = array(array('__username' => 'foo', '_password' => 'bar', '_foo_bar' => 'foobar'), array('_Username' => 'foo', 'Password' => 'bar', 'FooBar' => 'foobar'));
+
+        return $array;
+    }
+
+    /**
+     * @dataProvider normalizeProviderLeadingUnderscore
+     */
+    public function testNormalizeLeadingUnderscore(array $array, array $expected)
+    {
+        $normalizer = new CamelKeysNormalizerWithLeadingUnderscore();
+        $this->assertEquals($expected, $normalizer->normalize($array));
+    }
+
+    public function normalizeProviderLeadingUnderscore()
+    {
+        $array = $this->normalizeProviderCommon();
+        $array[] = array(array('__username' => 'foo', '_password' => 'bar', '_foo_bar' => 'foobar'), array('__username' => 'foo', '_password' => 'bar', '_fooBar' => 'foobar'));
+
+        return $array;
+    }
+
+    private function normalizeProviderCommon()
+    {
+        return array(
+            array(array(), array()),
+            array(
+                array('foo' => array('Foo_bar_baz' => array('foo_Bar' => array('foo_bar' => 'foo_bar'))),
+                    'foo_1ar' => array('foo_bar'),
+                ),
+                array('foo' => array('FooBarBaz' => array('fooBar' => array('fooBar' => 'foo_bar'))),
+                    'foo1ar' => array('foo_bar'),
+                ),
+            ),
+        );
     }
 }

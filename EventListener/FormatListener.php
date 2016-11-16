@@ -22,6 +22,8 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  * This listener handles Accept header format negotiations.
  *
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
+ *
+ * @internal
  */
 class FormatListener
 {
@@ -57,7 +59,7 @@ class FormatListener
             if (null === $format) {
                 $accept = $this->formatNegotiator->getBest('');
                 if (null !== $accept && 0.0 < $accept->getQuality()) {
-                    $format = $request->getFormat($accept->getType());
+                    $format = $request->getFormat($accept->getValue());
                     if (null !== $format) {
                         $request->attributes->set('media_type', $accept->getValue());
                     }

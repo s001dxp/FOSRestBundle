@@ -11,14 +11,8 @@
 
 namespace FOS\RestBundle\Request;
 
-use FOS\RestBundle\Context\Adapter\DeserializationContextAdapterInterface;
-use FOS\RestBundle\Context\Adapter\SerializerAwareInterface;
 use FOS\RestBundle\Context\Context;
-use FOS\RestBundle\Context\ContextInterface;
-use FOS\RestBundle\Context\GroupableContextInterface;
-use FOS\RestBundle\Context\MaxDepthContextInterface;
-use FOS\RestBundle\Context\SerializeNullContextInterface;
-use FOS\RestBundle\Context\VersionableContextInterface;
+use FOS\RestBundle\Serializer\Serializer;
 use JMS\Serializer\Exception\Exception as JMSSerializerException;
 use JMS\Serializer\Exception\UnsupportedFormatException;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\ParamConverter;
@@ -47,22 +41,16 @@ class RequestBodyParamConverter implements ParamConverterInterface
     private $validationErrorsArgument;
 
     /**
-     * @var DeserializationContextAdapterInterface
-     */
-    private $contextAdapter;
-
-    /**
-     * @param object             $serializer
+     * @param Serializer         $serializer
      * @param array|null         $groups                   An array of groups to be used in the serialization context
      * @param string|null        $version                  A version string to be used in the serialization context
-     * @param object             $serializer
      * @param ValidatorInterface $validator
      * @param string|null        $validationErrorsArgument
      *
      * @throws \InvalidArgumentException
      */
     public function __construct(
-        $serializer,
+        Serializer $serializer,
         $groups = null,
         $version = null,
         ValidatorInterface $validator = null,
@@ -87,16 +75,6 @@ class RequestBodyParamConverter implements ParamConverterInterface
     }
 
     /**
-     * Sets context adapter.
-     *
-     * @param DeserializationContextAdapterInterface $contextAdapter
-     */
-    public function setDeserializationContextAdapter(DeserializationContextAdapterInterface $contextAdapter)
-    {
-        $this->contextAdapter = $contextAdapter;
-    }
-
-    /**
      * {@inheritdoc}
      */
     public function apply(Request $request, ParamConverter $configuration)
@@ -104,16 +82,11 @@ class RequestBodyParamConverter implements ParamConverterInterface
         $options = (array) $configuration->getOptions();
 
         if (isset($options['deserializationContext']) && is_array($options['deserializationContext'])) {
-            $context = array_merge($this->context, $options['deserializationContext']);
+            $arrayContext = array_merge($this->context, $options['deserializationContext']);
         } else {
-            $context = $this->context;
+            $arrayContext = $this->context;
         }
-
-        $context = $this->configureDeserializationContext($this->getDeserializationContext(), $context);
-        if ($this->contextAdapter instanceof SerializerAwareInterface) {
-            $this->contextAdapter->setSerializer($this->serializer);
-        }
-        $context = $this->contextAdapter->convertDeserializationContext($context);
+        $this->configureContext($context = new Context(), $arrayContext);
 
         try {
             $object = $this->serializer->deserialize(
@@ -123,11 +96,11 @@ class RequestBodyParamConverter implements ParamConverterInterface
                 $context
             );
         } catch (UnsupportedFormatException $e) {
-            throw new UnsupportedMediaTypeHttpException($e->getMessage(), $e);
+            return $this->throwException(new UnsupportedMediaTypeHttpException($e->getMessage(), $e), $configuration);
         } catch (JMSSerializerException $e) {
-            throw new BadRequestHttpException($e->getMessage(), $e);
+            return $this->throwException(new BadRequestHttpException($e->getMessage(), $e), $configuration);
         } catch (SymfonySerializerException $e) {
-            throw new BadRequestHttpException($e->getMessage(), $e);
+            return $this->throwException(new BadRequestHttpException($e->getMessage(), $e), $configuration);
         }
 
         $request->attributes->set($configuration->getName(), $object);
@@ -155,36 +128,39 @@ class RequestBodyParamConverter implements ParamConverterInterface
     }
 
     /**
-     * @return ContextInterface
+     * @param Context $context
+     * @param array   $options
      */
-    protected function getDeserializationContext()
-    {
-        return new Context();
-    }
-
-    /**
-     * @param ContextInterface $context
-     * @param array            $options
-     *
-     * @return ContextInterface
-     */
-    protected function configureDeserializationContext(ContextInterface $context, array $options)
+    protected function configureContext(Context $context, array $options)
     {
         foreach ($options as $key => $value) {
-            if ($key == 'groups' && $context instanceof GroupableContextInterface) {
+            if ($key === 'groups') {
                 $context->addGroups($options['groups']);
-            } elseif ($key == 'version' && $context instanceof VersionableContextInterface) {
+            } elseif ($key === 'version') {
                 $context->setVersion($options['version']);
-            } elseif ($key == 'maxDepth' && $context instanceof MaxDepthContextInterface) {
+            } elseif ($key === 'maxDepth') {
+                @trigger_error('Context attribute "maxDepth" is deprecated since version 2.1 and will be removed in 3.0. Use "enable_max_depth" instead.', E_USER_DEPRECATED);
                 $context->setMaxDepth($options['maxDepth']);
-            } elseif ($key == 'serializeNull' && $context instanceof SerializeNullContextInterface) {
+            } elseif ($key === 'enableMaxDepth') {
+                $context->enableMaxDepth($options['enableMaxDepth']);
+            } elseif ($key === 'serializeNull') {
                 $context->setSerializeNull($options['serializeNull']);
             } else {
                 $context->setAttribute($key, $value);
             }
         }
+    }
 
-        return $context;
+    /**
+     * Throws an exception or return false if a ParamConverter is optional.
+     */
+    private function throwException(\Exception $exception, ParamConverter $configuration)
+    {
+        if ($configuration->isOptional()) {
+            return false;
+        }
+
+        throw $exception;
     }
 
     /**

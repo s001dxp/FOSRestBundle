@@ -27,6 +27,8 @@ which adds several convenience methods:
 
     <?php
 
+    namespace AppBundle\Controller;
+
     use FOS\RestBundle\Controller\FOSRestController;
 
     class UsersController extends FOSRestController
@@ -55,11 +57,20 @@ which adds several convenience methods:
 .. versionadded:: 1.6
   The ``setTemplateData`` method was added in 1.6.
 
+There is also a trait called ``ControllerTrait`` for anyone that prefers to not
+inject the container into their controller. This requires using setter injection
+to set a ``ViewHandlerInterface`` instance via the ``setViewHandler`` method.
+
+.. versionadded:: 2.0
+    The ``ControllerTrait`` trait was added in 2.0.
+
 If you need to pass more data in template, not for serialization, you can use ``setTemplateData`` method:
 
 .. code-block:: php
 
     <?php
+
+    namespace AppBundle\Controller;
 
     use FOS\RestBundle\Controller\FOSRestController;
 
@@ -88,6 +99,8 @@ or it is possible to use lazy-loading:
 
     <?php
 
+    namespace AppBundle\Controller;
+
     use FOS\RestBundle\Controller\FOSRestController;
 
     class UsersController extends FOSRestController
@@ -102,7 +115,7 @@ or it is possible to use lazy-loading:
                 ->setTemplateVar('products')
                 ->setTemplateData(function (ViewHandlerInterface $viewHandler, ViewInterface $view) use ($categoryManager, $categorySlug) {
                     $category = $categoryManager->getBySlug($categorySlug);
-                    
+
                     return array(
                         'category' => $category,
                     );
@@ -136,14 +149,15 @@ There are several more methods on the ``View`` class, here is a list of all
 the important ones for configuring the view:
 
 * ``setData($data)`` - Set the object graph or list of objects to serialize.
-* ``setTemplateData($templateData)`` - Set the template data array or anonymous function. Closure should return array.
+* ``setTemplateData($data)`` - Set the template data array or anonymous function. Closure should return array.
 * ``setHeader($name, $value)`` - Set a header to put on the HTTP response.
 * ``setHeaders(array $headers)`` - Set multiple headers to put on the HTTP response.
-* ``setSerializationContext($context)`` - Set the serialization context to use.
-* ``setTemplate($name)`` - Name of the template to use in case of HTML rendering.
-* ``setTemplateVar($name)`` - Name of the variable the data is in, when passed
+* ``setStatusCode($code)`` - Set the HTTP status code.
+* ``getContext()`` - The serialization context to use.
+* ``setTemplate($template)`` - Name of the template to use in case of HTML rendering.
+* ``setTemplateVar($templateVar)`` - Name of the variable the data is in, when passed
   to HTML template. Defaults to ``'data'``.
-* ``setEngine($name)`` - Name of the engine to render HTML template. Can be
+* ``setEngine($engine)`` - Name of the engine to render HTML template. Can be
   autodetected.
 * ``setFormat($format)`` - The format the response is supposed to be rendered in.
   Can be autodetected using HTTP semantics.
@@ -171,7 +185,7 @@ Then:
   leads to a "validation failed" response.
 - In a rendered template, the form is passed as 'form' and ``createView()``
   is called automatically.
-- ``$form->getData()`` is passed into the view as template as ``'data'`` if the
+- ``$form->getData()`` is passed into the view template as ``'data'`` if the
   form is the only view data.
 - An invalid form will be wrapped into an exception.
 
@@ -194,36 +208,11 @@ A response example of an invalid form:
     }
 
 If you don't like the default exception structure, you can provide your own
-implementation.
+normalizers.
 
-Implement the ``ExceptionWrapperHandlerInterface``:
+You can look at `FOSRestBundle normalizers`_ for examples.
 
-.. code-block:: php
-
-    namespace My\Bundle\Handler;
-
-    class MyExceptionWrapperHandler implements ExceptionWrapperHandlerInterface
-    {
-        /**
-         * {@inheritdoc}
-         */
-        public function wrap($data)
-        {
-            return new MyExceptionWrapper($data);
-        }
-    }
-
-In the ``wrap`` method return any object or array.
-
-Update the ``config.yml``:
-
-.. code-block:: yaml
-
-    fos_rest:
-        view:
-            # ...
-            exception_wrapper_handler: my_exception_wrapper_handler_service
-            # ...
+.. _`FOSRestBundle normalizers`: https://github.com/FriendsOfSymfony/FOSRestBundle/tree/master/Serializer/Normalizer
 
 Data Transformation
 -------------------
@@ -253,15 +242,15 @@ Let's take an entity ``Task`` that holds a reference to a ``Person`` as
 an example. The serialized Task object will looks as follows:
 
 .. code-block:: json
-    
+
     {"task_form":{"name":"Task1", "person":{"id":1, "name":"Fabien"}}}
 
-In a traditional Symfony2 application we simply define the property of the
+In a traditional Symfony application we simply define the property of the
 related class and it would perfectly assign the person to our task - in this
 case based on the id:
 
 .. code-block:: php
-    
+
     $builder
         ->add('name', 'text')
         ...
@@ -272,11 +261,11 @@ case based on the id:
 
 Unfortunately, this form builder does not accept our serialized object as it is
 - even though it contains the necessary id. In fact, the object would have to
-contain the id directly assigned to the person field to be be accepted by the
+contain the id directly assigned to the person field to be accepted by the
 form validation process:
 
 .. code-block:: json
-    
+
     {"task_form":{"name":"Task1", "person":1}}
 
 Well, this is somewhat useless since we not only want to display the name of the
@@ -287,7 +276,7 @@ data transformer. Fortunately, the FOSRestBundle comes with an
 ``EntityToIdObjectTransformer``, which can be applied to any form builder:
 
 .. code-block:: php
-    
+
     $personTransformer = new EntityToIdObjectTransformer($this->om, "AcmeDemoBundle:Person");
     $builder
         ->add('name', 'text')
@@ -371,6 +360,8 @@ Here is an example using a closure registered inside a Controller action:
 
     <?php
 
+    namespace AppBundle\Controller;
+
     use Symfony\Bundle\FrameworkBundle\Controller\Controller;
     use FOS\RestBundle\View\View;
 
@@ -389,26 +380,26 @@ Here is an example using a closure registered inside a Controller action:
                     // and place the content into the data
                     if ($view->getTemplate()) {
                         $data = $view->getData();
-                        
+
                         if (empty($data['params'])) {
                             $params = array();
                         } else {
                             $params = $data['params'];
                             unset($data['params']);
                         }
-                        
+
                         $view->setData($params);
                         $data['html'] = $handler->renderTemplate($view, 'html');
 
                         $view->setData($data);
                     }
-                    
+
                     return $handler->createResponse($view, $request, $format);
                 };
-                
+
                 $handler->registerHandler($view->getFormat(), $templatingHandler);
             }
-            
+
             return $handler->handle($view);
         }
     }

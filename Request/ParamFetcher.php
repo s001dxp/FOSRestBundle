@@ -11,13 +11,11 @@
 
 namespace FOS\RestBundle\Request;
 
-use Doctrine\Common\Util\ClassUtils;
 use FOS\RestBundle\Controller\Annotations\ParamInterface;
+use FOS\RestBundle\Exception\InvalidParameterException;
 use FOS\RestBundle\Util\ResolverTrait;
 use FOS\RestBundle\Validator\Constraints\ResolvableConstraintInterface;
-use FOS\RestBundle\Validator\ViolationFormatterInterface;
-use Symfony\Component\DependencyInjection\ContainerAwareInterface;
-use Symfony\Component\DependencyInjection\ContainerAwareTrait;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -35,35 +33,30 @@ use Symfony\Component\Validator\ConstraintViolation;
  * @author Jordi Boggiano <j.boggiano@seld.be>
  * @author Boris Guéry <guery.b@gmail.com>
  */
-class ParamFetcher implements ParamFetcherInterface, ContainerAwareInterface
+class ParamFetcher implements ParamFetcherInterface
 {
-    use ResolverTrait, ContainerAwareTrait;
+    use ResolverTrait;
 
-    private $paramReader;
+    private $container;
+    private $parameterBag;
     private $requestStack;
-    private $params;
     private $validator;
-    private $violationFormatter;
-
-    /**
-     * @var callable
-     */
-    private $controller;
 
     /**
      * Initializes fetcher.
      *
-     * @param ParamReaderInterface        $paramReader
-     * @param RequestStack                $requestStack
-     * @param ValidatorInterface          $validator
-     * @param ViolationFormatterInterface $violationFormatter
+     * @param ContainerInterface   $container
+     * @param ParamReaderInterface $paramReader
+     * @param RequestStack         $requestStack
+     * @param ValidatorInterface   $validator
      */
-    public function __construct(ParamReaderInterface $paramReader, RequestStack $requestStack, ViolationFormatterInterface $violationFormatter, ValidatorInterface $validator = null)
+    public function __construct(ContainerInterface $container, ParamReaderInterface $paramReader, RequestStack $requestStack, ValidatorInterface $validator = null)
     {
-        $this->paramReader = $paramReader;
+        $this->container = $container;
         $this->requestStack = $requestStack;
-        $this->violationFormatter = $violationFormatter;
         $this->validator = $validator;
+
+        $this->parameterBag = new ParameterBag($paramReader);
     }
 
     /**
@@ -71,7 +64,7 @@ class ParamFetcher implements ParamFetcherInterface, ContainerAwareInterface
      */
     public function setController($controller)
     {
-        $this->controller = $controller;
+        $this->parameterBag->setController($this->getRequest(), $controller);
     }
 
     /**
@@ -83,8 +76,7 @@ class ParamFetcher implements ParamFetcherInterface, ContainerAwareInterface
      */
     public function addParam(ParamInterface $param)
     {
-        $this->getParams(); // init params
-        $this->params[$param->getName()] = $param;
+        $this->parameterBag->addParam($this->getRequest(), $param);
     }
 
     /**
@@ -92,11 +84,7 @@ class ParamFetcher implements ParamFetcherInterface, ContainerAwareInterface
      */
     public function getParams()
     {
-        if (null === $this->params) {
-            $this->initParams();
-        }
-
-        return $this->params;
+        return $this->parameterBag->getParams($this->getRequest());
     }
 
     /**
@@ -113,35 +101,29 @@ class ParamFetcher implements ParamFetcherInterface, ContainerAwareInterface
         /** @var ParamInterface $param */
         $param = $params[$name];
         $default = $param->getDefault();
+        $default = $this->resolveValue($this->container, $default);
         $strict = (null !== $strict ? $strict : $param->isStrict());
 
         $paramValue = $param->getValue($this->getRequest(), $default);
 
-        return $this->cleanParamWithRequirements($param, $paramValue, $strict);
+        return $this->cleanParamWithRequirements($param, $paramValue, $strict, $default);
     }
 
     /**
      * @param ParamInterface $param
      * @param mixed          $paramValue
      * @param bool           $strict
+     * @param mixed          $default
      *
      * @throws BadRequestHttpException
      * @throws \RuntimeException
      *
      * @return mixed
+     *
+     * @internal
      */
-    protected function cleanParamWithRequirements(ParamInterface $param, $paramValue, $strict)
+    protected function cleanParamWithRequirements(ParamInterface $param, $paramValue, $strict, $default)
     {
-        if (empty($this->container)) {
-            throw new \InvalidArgumentException(
-                'The ParamFetcher has been not initialized correctly. '.
-                'The container for parameter resolution is missing.'
-            );
-        }
-
-        $default = $param->getDefault();
-        $default = $this->resolveValue($this->container, $default);
-
         $this->checkNotIncompatibleParams($param);
         if ($default !== null && $default === $paramValue) {
             return $paramValue;
@@ -176,9 +158,7 @@ class ParamFetcher implements ParamFetcherInterface, ContainerAwareInterface
 
         if (0 < count($errors)) {
             if ($strict) {
-                throw new BadRequestHttpException(
-                    $this->violationFormatter->formatList($param, $errors)
-                );
+                throw InvalidParameterException::withViolations($param, $errors);
             }
 
             return null === $default ? '' : $default;
@@ -203,32 +183,6 @@ class ParamFetcher implements ParamFetcherInterface, ContainerAwareInterface
     }
 
     /**
-     * Initialize the parameters.
-     *
-     * @throws \InvalidArgumentException
-     */
-    private function initParams()
-    {
-        if (empty($this->controller)) {
-            throw new \InvalidArgumentException('Controller and method needs to be set via setController');
-        }
-
-        if (!is_array($this->controller) || empty($this->controller[0]) || empty($this->controller[1])) {
-            throw new \InvalidArgumentException(
-                'Controller needs to be set as a class instance (closures/functions are not supported)'
-            );
-        }
-
-        // the controller could be a proxy, e.g. when using the JMSSecuriyExtraBundle or JMSDiExtraBundle
-        $className = ClassUtils::getClass($this->controller[0]);
-
-        $this->params = $this->paramReader->read(
-            new \ReflectionClass($className),
-            $this->controller[1]
-        );
-    }
-
-    /**
      * Check if current param is not in conflict with other parameters
      * according to the "incompatibles" field.
      *
@@ -236,6 +190,8 @@ class ParamFetcher implements ParamFetcherInterface, ContainerAwareInterface
      *
      * @throws InvalidArgumentException
      * @throws BadRequestHttpException
+     *
+     * @internal
      */
     protected function checkNotIncompatibleParams(ParamInterface $param)
     {

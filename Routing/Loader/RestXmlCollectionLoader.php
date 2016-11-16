@@ -70,6 +70,7 @@ class RestXmlCollectionLoader extends XmlFileLoader
                 $namePrefix = (string) $node->getAttribute('name-prefix');
                 $parent = (string) $node->getAttribute('parent');
                 $type = (string) $node->getAttribute('type');
+                $host = isset($config['host']) ? $config['host'] : null;
                 $currentDir = dirname($path);
 
                 $parents = [];
@@ -88,6 +89,10 @@ class RestXmlCollectionLoader extends XmlFileLoader
                     $prefix = null;
 
                     $this->collectionParents[$name] = $parents;
+                }
+
+                if (!empty($host)) {
+                    $imported->setHost($host);
                 }
 
                 $imported->addPrefix($prefix);
@@ -152,7 +157,7 @@ class RestXmlCollectionLoader extends XmlFileLoader
         $length = $node->childNodes->length;
         for ($i = 0; $i < $length; ++$i) {
             $loopNode = $node->childNodes->item($i);
-            if ($loopNode->nodeType == XML_TEXT_NODE) {
+            if ($loopNode->nodeType === XML_TEXT_NODE) {
                 continue;
             }
 
@@ -235,6 +240,8 @@ EOF;
 
     /**
      * {@inheritdoc}
+     *
+     * @internal
      */
     protected function loadFile($file)
     {
@@ -263,7 +270,7 @@ EOF;
         $errors = [];
         foreach (libxml_get_errors() as $error) {
             $errors[] = sprintf('[%s %s] %s (in %s - line %d, column %d)',
-                LIBXML_ERR_WARNING == $error->level ? 'WARNING' : 'ERROR',
+                LIBXML_ERR_WARNING === $error->level ? 'WARNING' : 'ERROR',
                 $error->code,
                 trim($error->message),
                 $error->file ? $error->file : 'n/a',

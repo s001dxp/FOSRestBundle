@@ -6,16 +6,13 @@
 
     <services>
 
-        <service id="fos_rest.converter.request_body" class="FOS\RestBundle\Request\RequestBodyParamConverter">
+        <service id="fos_rest.converter.request_body" class="FOS\RestBundle\Request\RequestBodyParamConverter" public="false">
             <argument type="service" id="fos_rest.serializer"/>
             <argument type="collection" /> <!-- serializer exclusion strategy groups -->
             <argument /> <!-- serializer exclusion strategy version -->
             <argument type="service" id="fos_rest.validator" on-invalid="ignore" />
             <argument /> <!-- request body validation errors argument -->
-            <call method="setDeserializationContextAdapter">
-                <argument type="service" id="fos_rest.context.adapter.chain_context_adapter" />
-            </call>
-            <tag name="request.param_converter" converter="fos_rest.request_body" />
+            <tag name="request.param_converter" converter="fos_rest.request_body" priority="-50"/>
         </service>
 
     </services>

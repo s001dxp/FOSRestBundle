@@ -40,6 +40,15 @@ For a full list of annotations check out ``FOS/RestBundle/Controller/Annotations
      * PATCH Route annotation.
      * @Patch("/likes/{type}/{typeId}")
      */
+     
+    // Options Route Definition
+    use FOS\RestBundle\Controller\Annotations\Options;
+
+    /**
+     * OPTIONS Route annotation.
+     * @Options("/likes/{type}/{typeId}")
+     */
+     
 
     // Post Route Definition
     use FOS\RestBundle\Controller\Annotations\Post;
@@ -73,7 +82,7 @@ Example:
     * @Get("/users/foo", name="_foo")
     * @Get("/users/bar", name="_bar")
     */
-    public function getUsers() { /** */ }
+    public function getUsersAction() { /** */ }
 
 
 Result:
@@ -98,7 +107,7 @@ Example:
     * @Get("/users/foo", name="get_foo", options={ "method_prefix" = false })
     * @Get("/users/bar", name="get_bar", options={ "method_prefix" = false })
     */
-    public function getUsers() { /** */ }
+    public function getUsersAction() { /** */ }
 
 
 Result:

@@ -35,7 +35,6 @@ Full default configuration
             templating:           templating
             serializer:           null
             view_handler:         fos_rest.view_handler.default
-            exception_handler:    fos_rest.view.exception_wrapper_handler
             inflector:            fos_rest.inflector.doctrine
             validator:            validator
         serializer:
@@ -69,7 +68,6 @@ Full default configuration
                 service:              null
             failed_validation:    400
             empty_content:        204
-            exception_wrapper_handler:  null
             serialize_null:       false
             jsonp_handler:
                 callback_param:       callback
@@ -113,12 +111,8 @@ Full default configuration
                 stop:                 false
                 prefer_extension:     true
                 fallback_format:      html
-                exception_fallback_format:  null
+                attributes:           []
                 priorities:           []
-            media_type:
-                enabled:              false
-                service:              null
-                version_regex:        '/(v|version)=(?P<version>[0-9\.]+)/'
         versioning:
             enabled: false
             default_version: ~

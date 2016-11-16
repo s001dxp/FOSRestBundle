@@ -14,6 +14,7 @@ namespace FOS\RestBundle\DependencyInjection;
 use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -23,9 +24,26 @@ use Symfony\Component\HttpFoundation\Response;
  * sections are normalized, and merged.
  *
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
+ *
+ * @internal
  */
-class Configuration implements ConfigurationInterface
+final class Configuration implements ConfigurationInterface
 {
+    /**
+     * Default debug mode value.
+     *
+     * @var bool
+     */
+    private $debug;
+
+    /**
+     * @param bool $debug
+     */
+    public function __construct($debug)
+    {
+        $this->debug = (bool) $debug;
+    }
+
     /**
      * Generates the configuration tree.
      *
@@ -100,16 +118,11 @@ return $v; })
                         ->scalarNode('templating')->defaultValue('templating')->end()
                         ->scalarNode('serializer')->defaultNull()->end()
                         ->scalarNode('view_handler')->defaultValue('fos_rest.view_handler.default')->end()
-                        ->scalarNode('exception_handler')->defaultValue('fos_rest.view.exception_wrapper_handler')->end()
                         ->scalarNode('inflector')->defaultValue('fos_rest.inflector.doctrine')->end()
                         ->scalarNode('validator')->defaultValue('validator')->end()
                     ->end()
                 ->end()
                 ->arrayNode('serializer')
-                    ->validate()
-                        ->ifTrue(function ($v) { return !empty($v['version']) && !empty($v['groups']); })
-                        ->thenInvalid('Only either a version or a groups exclusion strategy can be set')
-                    ->end()
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->scalarNode('version')->defaultNull()->end()
@@ -172,12 +185,14 @@ return $v; })
                         ->arrayNode('mime_types')
                             ->canBeEnabled()
                             ->beforeNormalization()
-                                ->ifArray()->then(function ($v) { if (!empty($v) && empty($v['formats'])) {
-     unset($v['enabled']);
-     $v = ['enabled' => true, 'formats' => $v];
- }
+                                ->ifArray()->then(function ($v) {
+                                    if (!empty($v) && empty($v['formats'])) {
+                                        unset($v['enabled']);
+                                        $v = ['enabled' => true, 'formats' => $v];
+                                    }
 
-return $v; })
+                                    return $v;
+                                })
                             ->end()
                             ->fixXmlConfig('format', 'formats')
                             ->children()
@@ -212,7 +227,6 @@ return $v; })
                         ->end()
                         ->scalarNode('failed_validation')->defaultValue(Response::HTTP_BAD_REQUEST)->end()
                         ->scalarNode('empty_content')->defaultValue(Response::HTTP_NO_CONTENT)->end()
-                        ->scalarNode('exception_wrapper_handler')->defaultNull()->end()
                         ->booleanNode('serialize_null')->defaultFalse()->end()
                         ->arrayNode('jsonp_handler')
                             ->canBeUnset()
@@ -283,24 +297,24 @@ return $v; })
                         })
                     ->end()
                     ->canBeEnabled()
-                    ->validate()
-                        ->ifTrue(function ($v) { return empty($v['rules']) && !empty($v['media_type']['enabled']); })
-                        ->thenInvalid('To enable the "media_type" setting, a "rules" setting must also needs to be defined for the "format_listener"')
-                    ->end()
                     ->children()
                         ->scalarNode('service')->defaultNull()->end()
                         ->arrayNode('rules')
                             ->cannotBeOverwritten()
                             ->prototype('array')
                                 ->fixXmlConfig('priority', 'priorities')
+                                ->fixXmlConfig('attribute', 'attributes')
                                 ->children()
                                     ->scalarNode('path')->defaultNull()->info('URL path info')->end()
                                     ->scalarNode('host')->defaultNull()->info('URL host name')->end()
                                     ->variableNode('methods')->defaultNull()->info('Method for URL')->end()
+                                    ->arrayNode('attributes')
+                                        ->useAttributeAsKey('name')
+                                        ->prototype('variable')->end()
+                                    ->end()
                                     ->booleanNode('stop')->defaultFalse()->end()
                                     ->booleanNode('prefer_extension')->defaultTrue()->end()
                                     ->scalarNode('fallback_format')->defaultValue('html')->end()
-                                    ->scalarNode('exception_fallback_format')->defaultNull()->end()
                                     ->arrayNode('priorities')
                                         ->beforeNormalization()->ifString()->then(function ($v) { return preg_split('/\s*,\s*/', $v); })->end()
                                         ->prototype('scalar')->end()
@@ -376,18 +390,71 @@ return $v; })
                         ->scalarNode('exception_controller')->defaultNull()->end()
                         ->arrayNode('codes')
                             ->useAttributeAsKey('name')
-                            ->validate()
-                                ->ifTrue(function ($v) { return 0 !== count(array_filter($v, function ($i) { return !defined('Symfony\Component\HttpFoundation\Response::'.$i) && !is_int($i); })); })
-                                ->thenInvalid('Invalid HTTP code in fos_rest.exception.codes, see Symfony\Component\HttpFoundation\Response for all valid codes.')
+                            ->beforeNormalization()
+                                ->ifArray()
+                                ->then(function (array $items) {
+                                    foreach ($items as &$item) {
+                                        if (is_int($item)) {
+                                            continue;
+                                        }
+
+                                        if (!defined('Symfony\Component\HttpFoundation\Response::'.$item)) {
+                                            throw new InvalidConfigurationException(
+                                                'Invalid HTTP code in fos_rest.exception.codes, see Symfony\Component\HttpFoundation\Response for all valid codes.'
+                                            );
+                                        }
+
+                                        $item = constant('Symfony\Component\HttpFoundation\Response::'.$item);
+                                    }
+
+                                    return $items;
+                                })
                             ->end()
-                            ->prototype('scalar')->end()
+                            ->prototype('integer')->end()
+                            ->validate()
+                                ->ifArray()
+                                ->then(function (array $items) {
+                                    foreach ($items as $class => $code) {
+                                        $this->testExceptionExists($class);
+                                    }
+
+                                    return $items;
+                                })
+                            ->end()
                         ->end()
                         ->arrayNode('messages')
                             ->useAttributeAsKey('name')
                             ->prototype('boolean')->end()
+                            ->validate()
+                                ->ifArray()
+                                ->then(function (array $items) {
+                                    foreach ($items as $class => $nomatter) {
+                                        $this->testExceptionExists($class);
+                                    }
+
+                                    return $items;
+                                })
+                            ->end()
+                        ->end()
+                        ->booleanNode('debug')
+                            ->defaultValue($this->debug)
                         ->end()
                     ->end()
                 ->end()
             ->end();
+    }
+
+    /**
+     * Checks if an exception is loadable.
+     *
+     * @param string $exception Class to test
+     *
+     * @throws InvalidConfigurationException if the class was not found
+     */
+    private function testExceptionExists($exception)
+    {
+        if (!is_subclass_of($exception, \Exception::class) && !is_a($exception, \Exception::class, true)) {
+            throw new InvalidConfigurationException("FOSRestBundle exception mapper: Could not load class '$exception' or the class does not extend from '\\Exception'. Most probably this is a configuration problem.");
+        }
     }
 }

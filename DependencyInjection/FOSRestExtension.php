@@ -14,29 +14,21 @@ namespace FOS\RestBundle\DependencyInjection;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\DefinitionDecorator;
-use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\HttpKernel\DependencyInjection\Extension;
 use Symfony\Component\HttpFoundation\Response;
 
-class FOSRestExtension extends Extension implements PrependExtensionInterface
+class FOSRestExtension extends Extension
 {
     /**
-     * Default sensio_framework_extra { view: { annotations: false } }.
-     *
      * {@inheritdoc}
      */
-    public function prepend(ContainerBuilder $container)
+    public function getConfiguration(array $config, ContainerBuilder $container)
     {
-        $configs = $container->getExtensionConfig($this->getAlias());
-        $parameterBag = $container->getParameterBag();
-        $configs = $parameterBag->resolveValue($configs);
-        $config = $this->processConfiguration(new Configuration(), $configs);
-
-        if ($config['view']['view_response_listener']['enabled']) {
-            $container->prependExtensionConfig('sensio_framework_extra', ['view' => ['annotations' => false]]);
-        }
+        return new Configuration($container->getParameter('kernel.debug'));
     }
 
     /**
@@ -50,13 +42,14 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
      */
     public function load(array $configs, ContainerBuilder $container)
     {
-        $config = $this->processConfiguration(new Configuration(), $configs);
+        $configuration = new Configuration($container->getParameter('kernel.debug'));
+        $config = $this->processConfiguration($configuration, $configs);
 
         $loader = new XmlFileLoader($container, new FileLocator(__DIR__.'/../Resources/config'));
-        $loader->load('context_adapters.xml');
         $loader->load('view.xml');
         $loader->load('routing.xml');
         $loader->load('request.xml');
+        $loader->load('serializer.xml');
 
         $container->getDefinition('fos_rest.routing.loader.controller')->replaceArgument(4, $config['routing_loader']['default_format']);
         $container->getDefinition('fos_rest.routing.loader.yaml_collection')->replaceArgument(4, $config['routing_loader']['default_format']);
@@ -77,7 +70,6 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
         }
 
         $this->loadForm($config, $loader, $container);
-        $this->loadSerializer($config, $container);
         $this->loadException($config, $loader, $container);
         $this->loadBodyConverter($config, $validator, $loader, $container);
         $this->loadView($config, $loader, $container);
@@ -89,13 +81,25 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
         $this->loadAllowedMethodsListener($config, $loader, $container);
         $this->loadAccessDeniedListener($config, $loader, $container);
         $this->loadZoneMatcherListener($config, $loader, $container);
+
+        // Needs RequestBodyParamConverter and View Handler loaded.
+        $this->loadSerializer($config, $container);
     }
 
     private function loadForm(array $config, XmlFileLoader $loader, ContainerBuilder $container)
     {
         if (!empty($config['disable_csrf_role'])) {
             $loader->load('forms.xml');
-            $container->getDefinition('fos_rest.form.extension.csrf_disable')->replaceArgument(1, $config['disable_csrf_role']);
+
+            $definition = $container->getDefinition('fos_rest.form.extension.csrf_disable');
+            $definition->replaceArgument(1, $config['disable_csrf_role']);
+
+            // BC for Symfony < 2.8: the extended_type attribute is used on higher versions
+            if (!method_exists(AbstractType::class, 'getBlockPrefix')) {
+                $definition->addTag('form.type_extension', ['alias' => 'form']);
+            } else {
+                $definition->addTag('form.type_extension', ['extended_type' => FormType::class]);
+            }
         }
     }
 
@@ -107,7 +111,7 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
             $service = $container->getDefinition('fos_rest.access_denied_listener');
 
             if (!empty($config['access_denied_listener']['service'])) {
-                $service->clearTag('kernel.event_listener');
+                $service->clearTag('kernel.event_subscriber');
             }
 
             $service->replaceArgument(0, $config['access_denied_listener']['formats']);
@@ -115,7 +119,7 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
         }
     }
 
-    public function loadAllowedMethodsListener(array $config, XmlFileLoader $loader, ContainerBuilder $container)
+    private function loadAllowedMethodsListener(array $config, XmlFileLoader $loader, ContainerBuilder $container)
     {
         if ($config['allowed_methods_listener']['enabled']) {
             if (!empty($config['allowed_methods_listener']['service'])) {
@@ -143,7 +147,7 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
             $service->replaceArgument(1, $config['body_listener']['throw_exception_on_unsupported_content_type']);
             $service->addMethodCall('setDefaultFormat', array($config['body_listener']['default_format']));
 
-            $container->getDefinition('fos_rest.decoder_provider')->replaceArgument(0, $config['body_listener']['decoders']);
+            $container->getDefinition('fos_rest.decoder_provider')->replaceArgument(1, $config['body_listener']['decoders']);
 
             $arrayNormalizer = $config['body_listener']['array_normalizer'];
 
@@ -165,20 +169,10 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
                 $service->clearTag('kernel.event_listener');
             }
 
-            foreach ($config['format_listener']['rules'] as &$rule) {
-                if (!isset($rule['exception_fallback_format'])) {
-                    $rule['exception_fallback_format'] = $rule['fallback_format'];
-                }
-            }
-
             $container->setParameter(
                 'fos_rest.format_listener.rules',
                 $config['format_listener']['rules']
             );
-
-            if ($config['view']['mime_types']['enabled']) {
-                $container->getDefinition('fos_rest.format_negotiator')->replaceArgument(1, $config['view']['mime_types']['formats']);
-            }
         }
     }
 
@@ -194,22 +188,14 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
             if ($config['versioning']['resolvers']['query']['enabled']) {
                 $resolvers['query'] = $container->getDefinition('fos_rest.versioning.query_parameter_resolver');
                 $resolvers['query']->replaceArgument(0, $config['versioning']['resolvers']['query']['parameter_name']);
-            } else {
-                $container->removeDefinition('fos_rest.versioning.query_parameter_resolver');
             }
-
             if ($config['versioning']['resolvers']['custom_header']['enabled']) {
                 $resolvers['custom_header'] = $container->getDefinition('fos_rest.versioning.header_resolver');
                 $resolvers['custom_header']->replaceArgument(0, $config['versioning']['resolvers']['custom_header']['header_name']);
-            } else {
-                $container->removeDefinition('fos_rest.versioning.header_resolver');
             }
-
             if ($config['versioning']['resolvers']['media_type']['enabled']) {
                 $resolvers['media_type'] = $container->getDefinition('fos_rest.versioning.media_type_resolver');
                 $resolvers['media_type']->replaceArgument(0, $config['versioning']['resolvers']['media_type']['regex']);
-            } else {
-                $container->removeDefinition('fos_rest.versioning.media_type_resolver');
             }
 
             $chainResolver = $container->getDefinition('fos_rest.versioning.chain_resolver');
@@ -258,10 +244,6 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
 
     private function loadView(array $config, XmlFileLoader $loader, ContainerBuilder $container)
     {
-        if (!empty($config['view']['exception_wrapper_handler'])) {
-            $container->setAlias('fos_rest.view.exception_wrapper_handler', $config['view']['exception_wrapper_handler']);
-        }
-
         if (!empty($config['view']['jsonp_handler'])) {
             $handler = new DefinitionDecorator($config['service']['view_handler']);
             $handler->setPublic(true);
@@ -285,18 +267,18 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
                 $service->clearTag('kernel.event_listener');
             }
 
-            $container->getDefinition('fos_rest.mime_type_listener')->replaceArgument(0, $config['view']['mime_types']);
+            $container->getDefinition('fos_rest.mime_type_listener')->replaceArgument(0, $config['view']['mime_types']['formats']);
         }
 
         if ($config['view']['view_response_listener']['enabled']) {
             $loader->load('view_response_listener.xml');
+            $service = $container->getDefinition('fos_rest.view_response_listener');
 
             if (!empty($config['view_response_listener']['service'])) {
-                $service = $container->getDefinition('fos_rest.view_response_listener');
                 $service->clearTag('kernel.event_listener');
             }
 
-            $container->setParameter('fos_rest.view_response_listener.force_view', $config['view']['view_response_listener']['force']);
+            $service->replaceArgument(1, $config['view']['view_response_listener']['force']);
         }
 
         $formats = [];
@@ -314,7 +296,6 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
         $container->getDefinition('fos_rest.routing.loader.yaml_collection')->replaceArgument(3, $formats);
         $container->getDefinition('fos_rest.routing.loader.xml_collection')->replaceArgument(3, $formats);
         $container->getDefinition('fos_rest.routing.loader.reader.action')->replaceArgument(4, $formats);
-        $container->getDefinition('fos_rest.view_handler.default')->replaceArgument(0, $formats);
 
         foreach ($config['view']['force_redirects'] as $format => $code) {
             if (true === $code) {
@@ -327,16 +308,17 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
         }
 
         $defaultViewHandler = $container->getDefinition('fos_rest.view_handler.default');
-        $defaultViewHandler->replaceArgument(1, $config['view']['failed_validation']);
+        $defaultViewHandler->replaceArgument(4, $formats);
+        $defaultViewHandler->replaceArgument(5, $config['view']['failed_validation']);
 
         if (!is_numeric($config['view']['empty_content'])) {
             $config['view']['empty_content'] = constant('\Symfony\Component\HttpFoundation\Response::'.$config['view']['empty_content']);
         }
 
-        $defaultViewHandler->replaceArgument(2, $config['view']['empty_content']);
-        $defaultViewHandler->replaceArgument(3, $config['view']['serialize_null']);
-        $defaultViewHandler->replaceArgument(4, $config['view']['force_redirects']);
-        $defaultViewHandler->replaceArgument(5, $config['view']['default_engine']);
+        $defaultViewHandler->replaceArgument(6, $config['view']['empty_content']);
+        $defaultViewHandler->replaceArgument(7, $config['view']['serialize_null']);
+        $defaultViewHandler->replaceArgument(8, $config['view']['force_redirects']);
+        $defaultViewHandler->replaceArgument(9, $config['view']['default_engine']);
     }
 
     private function loadException(array $config, XmlFileLoader $loader, ContainerBuilder $container)
@@ -346,47 +328,49 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
 
             if (!empty($config['exception']['service'])) {
                 $service = $container->getDefinition('fos_rest.exception_listener');
-                $service->clearTag('kernel.event_listener');
+                $service->clearTag('kernel.event_subscriber');
             }
 
             if ($config['exception']['exception_controller']) {
                 $container->getDefinition('fos_rest.exception_listener')->replaceArgument(0, $config['exception']['exception_controller']);
+            } elseif (isset($container->getParameter('kernel.bundles')['TwigBundle'])) {
+                $container->getDefinition('fos_rest.exception_listener')->replaceArgument(0, 'fos_rest.exception.twig_controller:showAction');
             }
 
-            if ($config['view']['mime_types']['enabled']) {
-                $container->getDefinition('fos_rest.exception_format_negotiator')->replaceArgument(1, $config['view']['mime_types']['formats']);
-            }
+            $container->getDefinition('fos_rest.exception.codes_map')
+                ->replaceArgument(0, $config['exception']['codes']);
+            $container->getDefinition('fos_rest.exception.messages_map')
+                ->replaceArgument(0, $config['exception']['messages']);
+
+            $container->getDefinition('fos_rest.exception.controller')
+                ->replaceArgument(2, $config['exception']['debug']);
+            $container->getDefinition('fos_rest.serializer.exception_normalizer.jms')
+                ->replaceArgument(1, $config['exception']['debug']);
+            $container->getDefinition('fos_rest.serializer.exception_normalizer.symfony')
+                ->replaceArgument(1, $config['exception']['debug']);
         }
-
-        foreach ($config['exception']['codes'] as $exception => $code) {
-            if (!is_numeric($code)) {
-                $config['exception']['codes'][$exception] = constant("\Symfony\Component\HttpFoundation\Response::$code");
-            }
-
-            $this->testExceptionExists($exception);
-        }
-
-        foreach ($config['exception']['messages'] as $exception => $message) {
-            $this->testExceptionExists($exception);
-        }
-
-        $container->setParameter('fos_rest.exception.codes', $config['exception']['codes']);
-        $container->setParameter('fos_rest.exception.messages', $config['exception']['messages']);
     }
 
     private function loadSerializer(array $config, ContainerBuilder $container)
     {
+        $bodyConverter = $container->hasDefinition('fos_rest.converter.request_body') ? $container->getDefinition('fos_rest.converter.request_body') : null;
+        $viewHandler = $container->getDefinition('fos_rest.view_handler.default');
+
         if (!empty($config['serializer']['version'])) {
-            $container->getDefinition('fos_rest.converter.request_body')->replaceArgument(2, $config['serializer']['version']);
-            $container->getDefinition('fos_rest.view_handler.default')->addMethodCall('setExclusionStrategyVersion', array($config['serializer']['version']));
+            if ($bodyConverter) {
+                $bodyConverter->replaceArgument(2, $config['serializer']['version']);
+            }
+            $viewHandler->addMethodCall('setExclusionStrategyVersion', array($config['serializer']['version']));
         }
 
         if (!empty($config['serializer']['groups'])) {
-            $container->getDefinition('fos_rest.converter.request_body')->replaceArgument(1, $config['serializer']['groups']);
-            $container->getDefinition('fos_rest.view_handler.default')->addMethodCall('setExclusionStrategyGroups', array($config['serializer']['groups']));
+            if ($bodyConverter) {
+                $bodyConverter->replaceArgument(1, $config['serializer']['groups']);
+            }
+            $viewHandler->addMethodCall('setExclusionStrategyGroups', array($config['serializer']['groups']));
         }
 
-        $container->getDefinition('fos_rest.view_handler.default')->addMethodCall('setSerializeNullStrategy', array($config['serializer']['serialize_null']));
+        $viewHandler->addMethodCall('setSerializeNullStrategy', array($config['serializer']['serialize_null']));
     }
 
     private function loadZoneMatcherListener(array $config, XmlFileLoader $loader, ContainerBuilder $container)
@@ -429,19 +413,5 @@ class FOSRestExtension extends Extension implements PrependExtensionInterface
         ;
 
         return new Reference($id);
-    }
-
-    /**
-     * Checks if an exception is loadable.
-     *
-     * @param string $exception Class to test
-     *
-     * @throws \InvalidArgumentException if the class was not found.
-     */
-    private function testExceptionExists($exception)
-    {
-        if (!is_subclass_of($exception, '\Exception') && !is_a($exception, '\Exception', true)) {
-            throw new \InvalidArgumentException("FOSRestBundle exception mapper: Could not load class '$exception' or the class does not extend from '\Exception'. Most probably this is a configuration problem.");
-        }
     }
 }

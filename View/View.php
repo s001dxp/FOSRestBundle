@@ -12,9 +12,8 @@
 namespace FOS\RestBundle\View;
 
 use FOS\RestBundle\Context\Context;
-use FOS\RestBundle\Context\ContextInterface;
-use Symfony\Bundle\FrameworkBundle\Templating\TemplateReference;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Templating\TemplateReferenceInterface;
 
 /**
  * Default View implementation.
@@ -24,20 +23,60 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class View
 {
+    /**
+     * @var mixed|null
+     */
     private $data;
+
+    /**
+     * @var int|null
+     */
+    private $statusCode;
+
+    /**
+     * @var mixed|null
+     */
     private $templateData = [];
+
+    /**
+     * @var TemplateReference|string|null
+     */
     private $template;
+
+    /**
+     * @var string|null
+     */
     private $templateVar;
+
+    /**
+     * @var string|null
+     */
     private $engine;
+
+    /**
+     * @var string|null
+     */
     private $format;
+
+    /**
+     * @var string|null
+     */
     private $location;
+
+    /**
+     * @var string|null
+     */
     private $route;
+
+    /**
+     * @var array|null
+     */
     private $routeParameters;
 
     /**
-     * @var ContextInterface
+     * @var Context
      */
-    private $serializationContext;
+    private $context;
 
     /**
      * @var Response
@@ -51,7 +90,7 @@ class View
      * @param int   $statusCode
      * @param array $headers
      *
-     * @return \FOS\RestBundle\View\View
+     * @return static
      */
     public static function create($data = null, $statusCode = null, array $headers = [])
     {
@@ -66,7 +105,7 @@ class View
      * @param int    $statusCode
      * @param array  $headers
      *
-     * @return View
+     * @return static
      */
     public static function createRedirect($url, $statusCode = Response::HTTP_FOUND, array $headers = [])
     {
@@ -85,7 +124,7 @@ class View
      * @param int    $statusCode
      * @param array  $headers
      *
-     * @return View
+     * @return static
      */
     public static function createRouteRedirect(
         $route,
@@ -110,7 +149,7 @@ class View
     public function __construct($data = null, $statusCode = null, array $headers = [])
     {
         $this->setData($data);
-        $this->setStatusCode($statusCode ?: 200);
+        $this->setStatusCode($statusCode);
         $this->setTemplateVar('data');
 
         if (!empty($headers)) {
@@ -178,13 +217,15 @@ class View
     /**
      * Sets the HTTP status code.
      *
-     * @param int $code
+     * @param int|null $code
      *
      * @return View
      */
     public function setStatusCode($code)
     {
-        $this->getResponse()->setStatusCode($code);
+        if (null !== $code) {
+            $this->statusCode = $code;
+        }
 
         return $this;
     }
@@ -192,13 +233,13 @@ class View
     /**
      * Sets the serialization context.
      *
-     * @param ContextInterface $serializationContext
+     * @param Context $context
      *
      * @return View
      */
-    public function setSerializationContext(ContextInterface $serializationContext)
+    public function setContext(Context $context)
     {
-        $this->serializationContext = $serializationContext;
+        $this->context = $context;
 
         return $this;
     }
@@ -206,16 +247,16 @@ class View
     /**
      * Sets template to use for the encoding.
      *
-     * @param string|TemplateReference $template
-     *
-     * @throws \InvalidArgumentException if the template is neither a string nor an instance of TemplateReference
+     * @param string|TemplateReferenceInterface $template
      *
      * @return View
+     *
+     * @throws \InvalidArgumentException if the template is neither a string nor an instance of TemplateReferenceInterface
      */
     public function setTemplate($template)
     {
-        if (!(is_string($template) || $template instanceof TemplateReference)) {
-            throw new \InvalidArgumentException('The template should be a string or extend TemplateReference');
+        if (!(is_string($template) || $template instanceof TemplateReferenceInterface)) {
+            throw new \InvalidArgumentException('The template should be a string or implement TemplateReferenceInterface');
         }
         $this->template = $template;
 
@@ -349,7 +390,7 @@ class View
      */
     public function getStatusCode()
     {
-        return $this->getResponse()->getStatusCode();
+        return $this->statusCode;
     }
 
     /**
@@ -365,7 +406,7 @@ class View
     /**
      * Gets the template.
      *
-     * @return TemplateReference|string|null
+     * @return TemplateReferenceInterface|string|null
      */
     public function getTemplate()
     {
@@ -441,6 +482,10 @@ class View
     {
         if (null === $this->response) {
             $this->response = new Response();
+
+            if (null !== ($code = $this->getStatusCode())) {
+                $this->response->setStatusCode($code);
+            }
         }
 
         return $this->response;
@@ -449,14 +494,14 @@ class View
     /**
      * Gets the serialization context.
      *
-     * @return ContextInterface
+     * @return Context
      */
-    public function getSerializationContext()
+    public function getContext()
     {
-        if (null === $this->serializationContext) {
-            $this->serializationContext = new Context();
+        if (null === $this->context) {
+            $this->context = new Context();
         }
 
-        return $this->serializationContext;
+        return $this->context;
     }
 }

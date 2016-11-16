@@ -25,7 +25,6 @@ class FormatNegotiator extends BaseNegotiator
 {
     private $map = [];
     private $requestStack;
-    private $mimeTypes;
 
     public function __construct(RequestStack $requestStack, array $mimeTypes = array())
     {
@@ -83,12 +82,16 @@ class FormatNegotiator extends BaseNegotiator
                 }
             }
 
-            $mimeTypes = $this->normalizePriorities($request,
-                empty($priorities) ? $options['priorities'] : $priorities
-            );
-            $mimeType = parent::getBest($header, $mimeTypes);
-            if ($mimeType !== null) {
-                return $mimeType;
+            if ($header) {
+                $mimeTypes = $this->normalizePriorities($request,
+                    empty($priorities) ? $options['priorities'] : $priorities
+                );
+
+                $mimeType = parent::getBest($header, $mimeTypes);
+
+                if ($mimeType !== null) {
+                    return $mimeType;
+                }
             }
 
             if (isset($options['fallback_format'])) {
@@ -134,12 +137,18 @@ class FormatNegotiator extends BaseNegotiator
                 continue;
             }
 
+            if (method_exists(Request::class, 'getMimeTypes')) {
+                $mimeTypes = array_merge($mimeTypes, Request::getMimeTypes($priority));
+            } elseif (null !== $request->getMimeType($priority)) {
+                $class = new \ReflectionClass(Request::class);
+                $properties = $class->getStaticProperties();
+                $mimeTypes = array_merge($mimeTypes, $properties['formats'][$priority]);
+            }
+
             if (isset($this->mimeTypes[$priority])) {
                 foreach ($this->mimeTypes[$priority] as $mimeType) {
                     $mimeTypes[] = $mimeType;
                 }
-            } elseif (($mimeType = $request->getMimeType($priority)) !== null) {
-                $mimeTypes[] = $mimeType;
             }
         }
 

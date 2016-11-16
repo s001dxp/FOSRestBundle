@@ -17,6 +17,7 @@ use FOS\RestBundle\FOSRestBundle;
 use FOS\RestBundle\Normalizer\Exception\NormalizationException;
 use Symfony\Component\HttpFoundation\HeaderBag;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Event\GetResponseEvent;
 
 /**
  * Request listener test.
@@ -38,24 +39,22 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
      */
     public function testOnKernelRequest($decode, Request $request, $method, $expectedParameters, $contentType = null, $throwExceptionOnUnsupportedContentType = false)
     {
-        $decoder = $this->getMockBuilder('FOS\RestBundle\Decoder\DecoderInterface')->disableOriginalConstructor()->getMock();
+        $decoder = $this->getMockBuilder('FOS\RestBundle\Decoder\DecoderInterface')->getMock();
         $decoder->expects($this->any())
             ->method('decode')
             ->will($this->returnValue($request->getContent()));
 
-        $decoderProvider = new ContainerDecoderProvider(['json' => 'foo']);
+        $container = $this->getMockBuilder('Symfony\Component\DependencyInjection\ContainerInterface')->getMock();
+        $decoderProvider = new ContainerDecoderProvider($container, ['json' => 'foo']);
 
         $listener = new BodyListener($decoderProvider, $throwExceptionOnUnsupportedContentType);
 
         if ($decode) {
-            $container = $this->getMock('Symfony\Component\DependencyInjection\Container', ['get']);
             $container
                 ->expects($this->once())
                 ->method('get')
                 ->with('foo')
                 ->will($this->returnValue($decoder));
-
-            $decoderProvider->setContainer($container);
         }
 
         $request->setMethod($method);
@@ -64,7 +63,7 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
             $request->headers = new HeaderBag(['Content-Type' => $contentType]);
         }
 
-        $event = $this->getMockBuilder('Symfony\Component\HttpKernel\Event\GetResponseEvent')
+        $event = $this->getMockBuilder(GetResponseEvent::class)
             ->disableOriginalConstructor()
             ->getMock();
         $event->expects($this->once())
@@ -92,29 +91,29 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
 
     public function testOnKernelRequestNoZone()
     {
-        $data = ['foo_bar' => 'foo_bar'];
-        $normalizedData = ['fooBar' => 'foo_bar'];
+        $data = array('foo_bar' => 'foo_bar');
+        $normalizedData = array('fooBar' => 'foo_bar');
 
-        $decoder = $this->getMock('FOS\RestBundle\Decoder\DecoderInterface');
+        $decoder = $this->getMockBuilder('FOS\RestBundle\Decoder\DecoderInterface')->getMock();
         $decoder
             ->expects($this->never())
             ->method('decode')
             ->will($this->returnValue($data));
 
-        $decoderProvider = $this->getMock('FOS\RestBundle\Decoder\DecoderProviderInterface');
+        $decoderProvider = $this->getMockBuilder('FOS\RestBundle\Decoder\DecoderProviderInterface')->getMock();
         $decoderProvider
             ->expects($this->never())
             ->method('getDecoder')
             ->will($this->returnValue($decoder));
 
-        $normalizer = $this->getMock('FOS\RestBundle\Normalizer\ArrayNormalizerInterface');
+        $normalizer = $this->getMockBuilder('FOS\RestBundle\Normalizer\ArrayNormalizerInterface')->getMock();
         $normalizer
             ->expects($this->never())
             ->method('normalize')
             ->with($data)
             ->will($this->returnValue($normalizedData));
 
-        $request = new Request([], [], [], [], [], [], 'foo');
+        $request = new Request(array(), array(), array(), array(), array(), array(), 'foo');
         $request->attributes->set(FOSRestBundle::ZONE_ATTRIBUTE, false);
         $request->setMethod('POST');
 
@@ -129,7 +128,7 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
         $listener = new BodyListener($decoderProvider, false, $normalizer);
         $listener->onKernelRequest($event);
 
-        $this->assertEquals([], $request->request->all());
+        $this->assertEquals(array(), $request->request->all());
     }
 
     public function testOnKernelRequestWithNormalizer()
@@ -137,13 +136,13 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
         $data = ['foo_bar' => 'foo_bar'];
         $normalizedData = ['fooBar' => 'foo_bar'];
 
-        $decoder = $this->getMock('FOS\RestBundle\Decoder\DecoderInterface');
+        $decoder = $this->getMockBuilder('FOS\RestBundle\Decoder\DecoderInterface')->getMock();
         $decoder
             ->expects($this->any())
             ->method('decode')
             ->will($this->returnValue($data));
 
-        $decoderProvider = $this->getMock('FOS\RestBundle\Decoder\DecoderProviderInterface');
+        $decoderProvider = $this->getMockBuilder('FOS\RestBundle\Decoder\DecoderProviderInterface')->getMock();
         $decoderProvider
             ->expects($this->any())
             ->method('getDecoder')
@@ -154,7 +153,7 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
             ->method('supports')
             ->will($this->returnValue(true));
 
-        $normalizer = $this->getMock('FOS\RestBundle\Normalizer\ArrayNormalizerInterface');
+        $normalizer = $this->getMockBuilder('FOS\RestBundle\Normalizer\ArrayNormalizerInterface')->getMock();
         $normalizer
             ->expects($this->once())
             ->method('normalize')
@@ -164,7 +163,7 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
         $request = new Request([], [], [], [], [], [], 'foo');
         $request->setMethod('POST');
 
-        $event = $this->getMockBuilder('Symfony\Component\HttpKernel\Event\GetResponseEvent')
+        $event = $this->getMockBuilder(GetResponseEvent::class)
             ->disableOriginalConstructor()
             ->getMock();
 
@@ -183,11 +182,11 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
      */
     public function testOnKernelRequestNormalizationWithForms($method, $contentType, $mustBeNormalized)
     {
-        $data = ['foo_bar' => 'foo_bar'];
-        $normalizedData = ['fooBar' => 'foo_bar'];
-        $decoderProvider = $this->getMock('FOS\RestBundle\Decoder\DecoderProviderInterface');
+        $data = array('foo_bar' => 'foo_bar');
+        $normalizedData = array('fooBar' => 'foo_bar');
+        $decoderProvider = $this->getMockBuilder('FOS\RestBundle\Decoder\DecoderProviderInterface')->getMock();
 
-        $normalizer = $this->getMock('FOS\RestBundle\Normalizer\ArrayNormalizerInterface');
+        $normalizer = $this->getMockBuilder('FOS\RestBundle\Normalizer\ArrayNormalizerInterface')->getMock();
 
         if ($mustBeNormalized) {
             $normalizer
@@ -205,7 +204,7 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
         $request->headers->set('Content-Type', $contentType);
         $request->setMethod($method);
 
-        $event = $this->getMockBuilder('Symfony\Component\HttpKernel\Event\GetResponseEvent')
+        $event = $this->getMockBuilder(GetResponseEvent::class)
             ->disableOriginalConstructor()
             ->getMock();
 
@@ -243,13 +242,13 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
      */
     public function testOnKernelRequestNormalizationException()
     {
-        $decoder = $this->getMock('FOS\RestBundle\Decoder\DecoderInterface');
+        $decoder = $this->getMockBuilder('FOS\RestBundle\Decoder\DecoderInterface')->getMock();
         $decoder
             ->expects($this->any())
             ->method('decode')
             ->will($this->returnValue([]));
 
-        $decoderProvider = $this->getMock('FOS\RestBundle\Decoder\DecoderProviderInterface');
+        $decoderProvider = $this->getMockBuilder('FOS\RestBundle\Decoder\DecoderProviderInterface')->getMock();
         $decoderProvider
             ->expects($this->any())
             ->method('getDecoder')
@@ -260,7 +259,7 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
             ->method('supports')
             ->will($this->returnValue(true));
 
-        $normalizer = $this->getMock('FOS\RestBundle\Normalizer\ArrayNormalizerInterface');
+        $normalizer = $this->getMockBuilder('FOS\RestBundle\Normalizer\ArrayNormalizerInterface')->getMock();
         $normalizer
             ->expects($this->once())
             ->method('normalize')
@@ -269,7 +268,7 @@ class BodyListenerTest extends \PHPUnit_Framework_TestCase
         $request = new Request([], [], [], [], [], [], 'foo');
         $request->setMethod('POST');
 
-        $event = $this->getMockBuilder('Symfony\Component\HttpKernel\Event\GetResponseEvent')
+        $event = $this->getMockBuilder(GetResponseEvent::class)
             ->disableOriginalConstructor()
             ->getMock();
 

@@ -2,7 +2,7 @@ FOSRestBundle
 =============
 
 This bundle provides various tools to rapidly develop RESTful API's &
-applications with Symfony2. Features include:
+applications with Symfony. Features include:
 
 - A View layer to enable output and format agnostic Controllers
 - A custom route loader to generate url's following REST conventions
@@ -17,12 +17,17 @@ applications with Symfony2. Features include:
 [![Latest Stable Version](https://poser.pugx.org/FriendsOfSymfony/rest-bundle/v/stable.svg)](https://packagist.org/packages/FriendsOfSymfony/rest-bundle)
 [![SensioLabsInsight](https://insight.sensiolabs.com/projects/0be23389-2e85-49cf-b333-caaa36d11c62/mini.png)](https://insight.sensiolabs.com/projects/0be23389-2e85-49cf-b333-caaa36d11c62)
 
+Note
+----
+
+FOSRestBundle 1.x is no longer maintained, 1.8 only receives security fixes. Please upgrade to FOSRestBundle 2.x as soon as possible.
+
 Documentation
 -------------
 
 [Read the Documentation](http://symfony.com/doc/master/bundles/FOSRestBundle/index.html)
 
-Please see the [UPGRADING.md](https://github.com/FriendsOfSymfony/FOSRestBundle/blob/master/UPGRADING.md) for any
+Please see the [UPGRADING-2.0.md](https://github.com/FriendsOfSymfony/FOSRestBundle/blob/master/UPGRADING-2.0.md) for any
 relevant instructions when upgrading to a newer version.
 
 Installation

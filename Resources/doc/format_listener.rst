@@ -27,17 +27,18 @@ Setting ``priorities`` to a non-empty array enables Accept header negotiations.
     # app/config/config.yml
     fos_rest:
         format_listener:
+            enabled: true
             rules:
                 # setting fallback_format to json means that instead of considering the next rule in case of a priority mismatch, json will be used
                 - { path: '^/', host: 'api.%domain%', priorities: ['json', 'xml'], fallback_format: json, prefer_extension: false }
                 # setting fallback_format to false means that instead of considering the next rule in case of a priority mismatch, a 406 will be caused
                 - { path: '^/image', priorities: ['jpeg', 'gif'], fallback_format: false, prefer_extension: true }
                 # setting fallback_format to null means that in case of a priority mismatch the next rule will be considered
-                - { path: '^/admin', methods: [ 'GET', 'POST'], priorities: [ 'xml', 'html'], fallback_format: ~, prefer_extension: false }
-                # setting fallback_format to null, while setting exception_fallback_format to xml, will mean that in case of an exception, xml will be used
-                - { path: '^/api', priorities: [ 'xml', 'json'], fallback_format: ~, exception_fallback_format: xml, prefer_extension: false }
+                - { path: '^/admin', methods: ['GET', 'POST'], priorities: ['xml', 'html'], fallback_format: ~, prefer_extension: false }
+                # you can specifically target the exception controller
+                - { path: '^/api', priorities: ['xml', 'json'], fallback_format: xml, attributes: { _controller: FOS\RestBundle\Controller\ExceptionController }, prefer_extension: false }
                 # setting a priority to */* basically means any format will be matched
-                - { path: '^/', priorities: [ 'text/html', '*/*'], fallback_format: html, prefer_extension: true }
+                - { path: '^/', priorities: ['text/html', '*/*'], fallback_format: html, prefer_extension: true }
 
 For example using the above configuration and the following Accept header:
 
@@ -83,9 +84,7 @@ in the controller action.
         // ...
     }
 
-Note that the format needs to either be supported by the ``Request`` class
-natively or it needs to be added as documented here or using the
-`mime type listener`_ explained in the Symfony documentation.
+Note that if you use custom mime types, they need to be added using the :doc:`Mime Type Listener <3-listener-support>`.
 
 Disabling the Format Listener via Rules
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -102,6 +101,7 @@ format will remain unchanged.
     # app/config/config.yml
     fos_rest:
         format_listener:
+            enabled: true
             rules:
                 - { path: '^/api', priorities: ['json', 'xml'], fallback_format: json, prefer_extension: false }
                 - { path: '^/', stop: true } # Available for version >= 1.5

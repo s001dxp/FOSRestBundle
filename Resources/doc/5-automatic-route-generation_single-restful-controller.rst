@@ -31,9 +31,10 @@ are explained in the next section.
     # app/config/routing.yml
     users:
         type:     rest
+        host:     m.example.com
         resource: Acme\HelloBundle\Controller\UsersController
 
-This will tell Symfony2 to automatically generate proper REST routes from your
+This will tell Symfony to automatically generate proper REST routes from your
 ``UsersController`` action names. Notice ``type: rest`` option. It's required so
 that the RestBundle can find which routes are supported.
 
@@ -43,46 +44,67 @@ Define resource actions
 .. code-block:: php
 
     <?php
+
+    namespace AppBundle\Controller;
+
     class UsersController
     {
+        public function copyUserAction($id) // RFC-2518
+        {} // "copy_user"            [COPY] /users/{id}
+
+        public function propfindUserPropsAction($id, $property) // RFC-2518
+        {} // "propfind_user_props"  [PROPFIND] /users/{id}/props/{property}
+
+        public function proppatchUserPropsAction($id, $property) // RFC-2518
+        {} // "proppatch_user_props" [PROPPATCH] /users/{id}/props/{property}
+
+        public function moveUserAction($id) // RFC-2518
+        {} // "move_user"            [MOVE] /users/{id}
+
+        public function mkcolUsersAction() // RFC-2518
+        {} // "mkcol_users"          [MKCOL] /users
+
         public function optionsUsersAction()
-        {} // "options_users" [OPTIONS] /users
+        {} // "options_users"        [OPTIONS] /users
 
         public function getUsersAction()
-        {} // "get_users"     [GET] /users
+        {} // "get_users"            [GET] /users
 
         public function newUsersAction()
-        {} // "new_users"     [GET] /users/new
+        {} // "new_users"            [GET] /users/new
 
         public function postUsersAction()
-        {} // "post_users"    [POST] /users
+        {} // "post_users"           [POST] /users
 
         public function patchUsersAction()
-        {} // "patch_users"   [PATCH] /users
+        {} // "patch_users"          [PATCH] /users
 
         public function getUserAction($slug)
-        {} // "get_user"      [GET] /users/{slug}
+        {} // "get_user"             [GET] /users/{slug}
 
         public function editUserAction($slug)
-        {} // "edit_user"     [GET] /users/{slug}/edit
+        {} // "edit_user"            [GET] /users/{slug}/edit
 
         public function putUserAction($slug)
-        {} // "put_user"      [PUT] /users/{slug}
+        {} // "put_user"             [PUT] /users/{slug}
 
         public function patchUserAction($slug)
-        {} // "patch_user"    [PATCH] /users/{slug}
+        {} // "patch_user"           [PATCH] /users/{slug}
 
         public function lockUserAction($slug)
-        {} // "lock_user"     [PATCH] /users/{slug}/lock
+        {} // "lock_user"            [LOCK] /users/{slug}
+
+        public function unlockUserAction($slug)
+        {} // "unlock_user"          [UNLOCK] /users/{slug}
 
         public function banUserAction($slug)
-        {} // "ban_user"      [PATCH] /users/{slug}/ban
+        {} // "ban_user"             [PATCH] /users/{slug}/ban
 
         public function removeUserAction($slug)
-        {} // "remove_user"   [GET] /users/{slug}/remove
+        {} // "remove_user"          [GET] /users/{slug}/remove
 
         public function deleteUserAction($slug)
-        {} // "delete_user"   [DELETE] /users/{slug}
+        {} // "delete_user"          [DELETE] /users/{slug}
 
         public function getUserCommentsAction($slug)
         {} // "get_user_comments"    [GET] /users/{slug}/comments
@@ -111,11 +133,11 @@ Define resource actions
         public function deleteUserCommentAction($slug, $id)
         {} // "delete_user_comment"  [DELETE] /users/{slug}/comments/{id}
 
-        public function linkUserAction($slug)
-        {} // "link_user_friend"     [LINK] /users/{slug}
+        public function linkUserFriendAction($slug, $id)
+        {} // "link_user_friend"     [LINK] /users/{slug}/friends/{id}
 
-        public function unlinkUserAction($slug)
-        {} // "unlink_user_friend"     [UNLINK] /users/{slug}
+        public function unlinkUserFriendAction($slug, $id)
+        {} // "unlink_user_friend"     [UNLINK] /users/{slug}/friends/{id}
     }
 
 That's all. All your resource (``UsersController``) actions will get mapped to
@@ -137,6 +159,8 @@ following would work as well:
 .. code-block:: php
 
     <?php
+
+    namespace AppBundle\Controller;
 
     use FOS\RestBundle\Routing\ClassResourceInterface;
 
@@ -167,6 +191,8 @@ name via the ``@RouteResource`` annotation:
 .. code-block:: php
 
     <?php
+
+    namespace AppBundle\Controller;
 
     use FOS\RestBundle\Controller\Annotations\RouteResource;
 
@@ -199,6 +225,8 @@ Finally, it's possible to have a singular resource name thanks to the ``@RouteRe
 .. code-block:: php
 
     <?php
+
+    namespace AppBundle\Controller;
 
     use FOS\RestBundle\Controller\Annotations\RouteResource;
 
@@ -337,6 +365,8 @@ to limit or add a custom format, you can do so by overriding it with the
 
     <?php
 
+    namespace AppBundle\Controller;
+
     use FOS\RestBundle\Controller\Annotations\Route;
 
         // ...
@@ -364,6 +394,7 @@ Example class implementing ``InflectorInterface``:
 .. code-block:: php
 
     <?php
+
     namespace Acme\HelloBundle\Util\Inflector;
 
     use FOS\RestBundle\Inflector\InflectorInterface;

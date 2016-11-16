@@ -13,6 +13,8 @@ Now inside a controller it's possible to simply return a ``View`` instance.
 
     <?php
 
+    namespace AppBundle\Controller;
+
     use FOS\RestBundle\View\View;
 
     class UsersController
@@ -33,29 +35,19 @@ example can further be simplified by using the various annotations supported by
 that bundle. There is also one additional annotation called ``@View()`` which
 extends from the ``@Template()`` annotation.
 
+Note: `SensioFrameworkExtraBundle`_ must be in your kernel if you want to use the annotations and ``sensio_framework_extra.view.annotations`` must be set to true.
+
 The ``@View()`` and ``@Template()`` annotations behave essentially the same with
 a minor difference. When ``view_response_listener`` is set to ``true`` instead
 of ``force`` and ``@View()`` is not used, then rendering will be delegated to
-`SensioFrameworkExtraBundle`_.
-
-Note that it is necessary to disable view annotations in
-`SensioFrameworkExtraBundle`_ so that FOSRestBundle can take over the handling.
-However, FOSRestBundle will do this automatically but it does not override any
-explicit configuration. So make sure to remove or disable the following setting:
-
-.. code-block:: yaml
-
-    # app/config/config.yml
-    fos_rest:
-        view:
-            view_response_listener: force
-
-    sensio_framework_extra:
-        view:    { annotations: false }
+`SensioFrameworkExtraBundle`_ (you must enable the view annotations in
+`SensioFrameworkExtraBundle`_ for that case, use the default configuration).
 
 .. code-block:: php
 
     <?php
+
+    namespace AppBundle\Controller;
 
     use FOS\RestBundle\Controller\Annotations\View;
 
@@ -160,11 +152,12 @@ You can also define your serializer options dynamically:
 
     <?php
 
+    use FOS\RestBundle\Controller\Annotations\View as ViewAnnotation;
     use FOS\RestBundle\View\View;
     use FOS\RestBundle\Context\Context;
 
     /**
-     * @View()
+     * @ViewAnnotation()
      */
     public function getUsersAction()
     {

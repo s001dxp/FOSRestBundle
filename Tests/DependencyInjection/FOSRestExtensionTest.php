@@ -14,6 +14,7 @@ namespace FOS\RestBundle\Tests\DependencyInjection;
 use FOS\RestBundle\DependencyInjection\FOSRestExtension;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\DefinitionDecorator;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
@@ -52,7 +53,8 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
     public function setUp()
     {
         $this->container = new ContainerBuilder();
-        $this->container->setParameter('kernel.bundles', ['JMSSerializerBundle' => true]);
+        $this->container->setParameter('kernel.bundles', array('JMSSerializerBundle' => true));
+        $this->container->setParameter('kernel.debug', false);
         $this->extension = new FOSRestExtension();
         $this->includeFormat = true;
         $this->formats = [
@@ -87,7 +89,7 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         ];
 
         $this->assertTrue($this->container->hasDefinition('fos_rest.body_listener'));
-        $this->assertEquals($decoders, $this->container->getDefinition('fos_rest.decoder_provider')->getArgument(0));
+        $this->assertEquals($decoders, $this->container->getDefinition('fos_rest.decoder_provider')->getArgument(1));
         $this->assertFalse($this->container->getDefinition('fos_rest.body_listener')->getArgument(1));
         $this->assertCount(2, $this->container->getDefinition('fos_rest.body_listener')->getArguments());
     }
@@ -103,7 +105,7 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $this->extension->load($config, $this->container);
         $normalizerArgument = $this->container->getDefinition('fos_rest.body_listener')->getArgument(2);
 
-        $this->assertInstanceOf('Symfony\Component\DependencyInjection\Reference', $normalizerArgument);
+        $this->assertInstanceOf(Reference::class, $normalizerArgument);
         $this->assertEquals('fos_rest.normalizer.camel_keys', (string) $normalizerArgument);
     }
 
@@ -123,7 +125,7 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $normalizeForms = $bodyListener->getArgument(3);
 
         $this->assertCount(4, $bodyListener->getArguments());
-        $this->assertInstanceOf('Symfony\Component\DependencyInjection\Reference', $normalizerArgument);
+        $this->assertInstanceOf(Reference::class, $normalizerArgument);
         $this->assertEquals('fos_rest.normalizer.camel_keys', (string) $normalizerArgument);
         $this->assertEquals(false, $normalizeForms);
     }
@@ -145,7 +147,7 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $normalizeForms = $bodyListener->getArgument(3);
 
         $this->assertCount(4, $bodyListener->getArguments());
-        $this->assertInstanceOf('Symfony\Component\DependencyInjection\Reference', $normalizerArgument);
+        $this->assertInstanceOf(Reference::class, $normalizerArgument);
         $this->assertEquals('fos_rest.normalizer.camel_keys', (string) $normalizerArgument);
         $this->assertEquals(true, $normalizeForms);
     }
@@ -234,7 +236,6 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $this->extension->load([], $this->container);
 
         $this->assertAlias('fos_rest.view_handler.default', 'fos_rest.view_handler');
-        $this->assertAlias('fos_rest.view.exception_wrapper_handler', 'fos_rest.exception_handler');
     }
 
     public function testDisableViewResponseListener()
@@ -255,7 +256,7 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $this->extension->load($config, $this->container);
 
         $this->assertTrue($this->container->hasDefinition('fos_rest.view_response_listener'));
-        $this->assertFalse($this->container->getParameter('fos_rest.view_response_listener.force_view'));
+        $this->assertFalse($this->container->getDefinition('fos_rest.view_response_listener')->getArgument(1));
     }
 
     public function testLoadViewResponseListenerForce()
@@ -266,33 +267,33 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $this->extension->load($config, $this->container);
 
         $this->assertTrue($this->container->hasDefinition('fos_rest.view_response_listener'));
-        $this->assertTrue($this->container->getParameter('fos_rest.view_response_listener.force_view'));
+        $this->assertTrue($this->container->getDefinition('fos_rest.view_response_listener')->getArgument(1));
     }
 
     public function testForceEmptyContentDefault()
     {
         $this->extension->load([], $this->container);
-        $this->assertEquals(204, $this->container->getDefinition('fos_rest.view_handler.default')->getArgument(2));
+        $this->assertEquals(204, $this->container->getDefinition('fos_rest.view_handler.default')->getArgument(6));
     }
 
     public function testForceEmptyContentIs200()
     {
         $config = ['fos_rest' => ['view' => ['empty_content' => 200]]];
         $this->extension->load($config, $this->container);
-        $this->assertEquals(200, $this->container->getDefinition('fos_rest.view_handler.default')->getArgument(2));
+        $this->assertEquals(200, $this->container->getDefinition('fos_rest.view_handler.default')->getArgument(6));
     }
 
     public function testViewSerializeNullDefault()
     {
         $this->extension->load([], $this->container);
-        $this->assertFalse($this->container->getDefinition('fos_rest.view_handler.default')->getArgument(3));
+        $this->assertFalse($this->container->getDefinition('fos_rest.view_handler.default')->getArgument(7));
     }
 
     public function testViewSerializeNullIsTrue()
     {
         $config = ['fos_rest' => ['view' => ['serialize_null' => true]]];
         $this->extension->load($config, $this->container);
-        $this->assertTrue($this->container->getDefinition('fos_rest.view_handler.default')->getArgument(3));
+        $this->assertTrue($this->container->getDefinition('fos_rest.view_handler.default')->getArgument(7));
     }
 
     public function testValidatorAliasWhenEnabled()
@@ -307,6 +308,18 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $config = ['fos_rest' => ['body_converter' => ['validate' => false]]];
         $this->extension->load($config, $this->container);
         $this->assertFalse($this->container->has('fos_rest.validator'));
+    }
+
+    public function testBodyConvertorDisabledAndSerializerVersionGiven()
+    {
+        $config = ['fos_rest' => ['body_converter' => ['enabled' => false], 'serializer' => ['version' => '1.0']]];
+        $this->extension->load($config, $this->container);
+    }
+
+    public function testBodyConvertorDisabledAndSerializerGroupsGiven()
+    {
+        $config = ['fos_rest' => ['body_converter' => ['enabled' => false], 'serializer' => ['groups' => ['Default']]]];
+        $this->extension->load($config, $this->container);
     }
 
     /**
@@ -343,23 +356,6 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
             $this->formats,
             $this->defaultFormat
         );
-    }
-
-    public function testContextAdaptersLoad()
-    {
-        $this->extension->load([], $this->container);
-
-        $this->assertEquals('FOS\RestBundle\Context\Adapter\JMSContextAdapter', $this->container->getDefinition('fos_rest.context.adapter.jms_context_adapter')->getClass());
-        $this->assertTrue($this->container->hasDefinition('fos_rest.context.adapter.jms_context_adapter'));
-
-        $this->assertEquals('FOS\RestBundle\Context\Adapter\ArrayContextAdapter', $this->container->getDefinition('fos_rest.context.adapter.array_context_adapter')->getClass());
-        $this->assertTrue($this->container->hasDefinition('fos_rest.context.adapter.array_context_adapter'));
-
-        $this->assertEquals('FOS\RestBundle\Context\Adapter\ChainContextAdapter', $this->container->getDefinition('fos_rest.context.adapter.chain_context_adapter')->getClass());
-        $this->assertTrue($this->container->hasDefinition('fos_rest.context.adapter.chain_context_adapter'));
-        $argument = $this->container->getDefinition('fos_rest.context.adapter.chain_context_adapter')->getArgument(0);
-        $this->assertEquals('fos_rest.context.adapter.jms_context_adapter', $argument[0]);
-        $this->assertEquals('fos_rest.context.adapter.array_context_adapter', $argument[1]);
     }
 
     public function testIncludeFormatDisabled()
@@ -461,39 +457,6 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         );
     }
 
-    /**
-     * @expectedException \InvalidArgumentException
-     */
-    public function testLoadBadClassThrowsException()
-    {
-        $this->extension->load([
-            'fos_rest' => [
-                'exception' => [
-                    'messages' => [
-                        'UnknownException' => true,
-                    ],
-                ],
-            ],
-        ], $this->container);
-    }
-
-    /**
-     * @expectedException \InvalidArgumentException
-     * @expectedExceptionMessage Could not load class 'UnknownException' or the class does not extend from '\Exception'
-     */
-    public function testLoadBadMessagesClassThrowsException()
-    {
-        $this->extension->load([
-            'fos_rest' => [
-                'exception' => [
-                    'codes' => [
-                        'UnknownException' => 404,
-                    ],
-                ],
-            ],
-        ], $this->container);
-    }
-
     public function testLoadOkMessagesClass()
     {
         $this->extension->load([
@@ -539,6 +502,79 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         return array_map(function ($i) {
             return [$i];
         }, $data);
+    }
+
+    /**
+     * Test exception.debug config value uses kernel.debug value by default or provided value.
+     *
+     * @dataProvider getShowExceptionData
+     *
+     * @param bool        $kernelDebug     kernel.debug param value
+     * @param array       $exceptionConfig Exception config
+     * @param bool|string $expectedValue   Expected value of show_exception argument
+     */
+    public function testExceptionDebug($kernelDebug, $exceptionConfig, $expectedValue)
+    {
+        $this->container->setParameter('kernel.debug', $kernelDebug);
+        $extension = new FOSRestExtension();
+
+        $extension->load(array(
+            'fos_rest' => array(
+                'exception' => $exceptionConfig,
+            ),
+        ), $this->container);
+
+        $definition = $this->container->getDefinition('fos_rest.exception.controller');
+        $this->assertSame($expectedValue, $definition->getArgument(2));
+
+        $definition = $this->container->getDefinition('fos_rest.serializer.exception_normalizer.jms');
+        $this->assertSame($expectedValue, $definition->getArgument(1));
+
+        $definition = $this->container->getDefinition('fos_rest.serializer.exception_normalizer.symfony');
+        $this->assertSame($expectedValue, $definition->getArgument(1));
+    }
+
+    public static function getShowExceptionData()
+    {
+        return array(
+            'empty config, kernel.debug is true' => array(
+                true,
+                array(),
+                true,
+            ),
+            'empty config, kernel.debug is false' => array(
+                false,
+                array(),
+                false,
+            ),
+            'config debug true' => array(
+                false,
+                array('debug' => true),
+                true,
+            ),
+            'config debug false' => array(
+                true,
+                array('debug' => false),
+                false,
+            ),
+            'config debug null, kernel.debug true' => array(
+                false,
+                array('debug' => null),
+                true,
+            ),
+            'config debug null, kernel.debug false' => array(
+                false,
+                array('debug' => null),
+                true,
+            ),
+        );
+    }
+
+    public function testGetConfiguration()
+    {
+        $configuration = $this->extension->getConfiguration(array(), $this->container);
+
+        $this->assertInstanceOf('FOS\RestBundle\DependencyInjection\Configuration', $configuration);
     }
 
     /**
@@ -598,24 +634,14 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $this->assertTrue($this->container->has('fos_rest.view_handler'));
 
         $viewHandler = $this->container->getDefinition('fos_rest.view_handler');
-        $this->assertInstanceOf('Symfony\Component\DependencyInjection\DefinitionDecorator', $viewHandler);
-    }
-
-    public function testCheckExceptionWrapperHandler()
-    {
-        $this->extension->load([], $this->container);
-
-        $this->assertTrue($this->container->has('fos_rest.view.exception_wrapper_handler'));
+        $this->assertInstanceOf(DefinitionDecorator::class, $viewHandler);
     }
 
     public function testSerializerExceptionNormalizer()
     {
-        $this->extension->load(['fos_rest' => ['view' => true]], $this->container);
+        $this->extension->load(['fos_rest' => ['exception' => true]], $this->container);
 
-        $this->assertTrue($this->container->has('fos_rest.serializer.exception_wrapper_normalizer'));
-
-        $definition = $this->container->getDefinition('fos_rest.serializer.exception_wrapper_normalizer');
-        $this->assertEquals('FOS\RestBundle\Serializer\ExceptionWrapperNormalizer', $definition->getClass());
+        $this->assertTrue($this->container->has('fos_rest.serializer.exception_normalizer.symfony'));
     }
 
     public function testZoneMatcherListenerDefault()

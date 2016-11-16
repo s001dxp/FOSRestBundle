@@ -11,6 +11,9 @@
 
 namespace FOS\RestBundle\Tests\Context;
 
+use FOS\RestBundle\Context\Context;
+use JMS\Serializer\Exclusion\ExclusionStrategyInterface;
+
 /**
  * @author Ener-Getick <egetick@gmail.com>
  */
@@ -20,22 +23,13 @@ class ContextTest extends \PHPUnit_Framework_TestCase
 
     public function setUp()
     {
-        $this->context = $this->getMock('FOS\RestBundle\Context\Context', null);
-    }
-
-    public function testInterfaces()
-    {
-        $this->assertInstanceOf('FOS\RestBundle\Context\ContextInterface', $this->context);
-        $this->assertInstanceOf('FOS\RestBundle\Context\GroupableContextInterface', $this->context);
-        $this->assertInstanceOf('FOS\RestBundle\Context\VersionableContextInterface', $this->context);
-        $this->assertInstanceOf('FOS\RestBundle\Context\MaxDepthContextInterface', $this->context);
-        $this->assertInstanceOf('FOS\RestBundle\Context\SerializeNullContextInterface', $this->context);
+        $this->context = new Context();
     }
 
     public function testDefaultValues()
     {
         $this->assertEquals([], $this->context->getAttributes());
-        $this->assertEquals([], $this->context->getGroups());
+        $this->assertEquals(null, $this->context->getGroups());
     }
 
     public function testAttributes()
@@ -54,25 +48,23 @@ class ContextTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals(['foo' => 'bar', 'foobar' => 'foo'], $this->context->getAttributes());
     }
 
-    public function testGroupsAddition()
-    {
-        $context = $this->getMock('FOS\RestBundle\Context\Context', ['addGroup']);
-        $context
-            ->expects($this->exactly(2))
-            ->method('addGroup')
-            ->withConsecutive(
-                ['Default'],
-                ['foo']
-            );
-        $this->assertEquals($context, $context->addGroups(['Default', 'foo']));
-    }
-
     public function testGroupAddition()
     {
+        $this->context->addGroups(array('quz', 'foo'));
         $this->context->addGroup('foo');
         $this->context->addGroup('bar');
 
-        $this->assertEquals(['foo', 'bar'], $this->context->getGroups());
+        $this->assertEquals(['quz', 'foo', 'bar'], $this->context->getGroups());
+    }
+
+    public function testSetGroups()
+    {
+        $this->context->setGroups(array('quz', 'foo'));
+
+        $this->assertEquals(array('quz', 'foo'), $this->context->getGroups());
+
+        $this->context->setGroups(array('foo'));
+        $this->assertEquals(array('foo'), $this->context->getGroups());
     }
 
     public function testAlreadyExistentGroupAddition()
@@ -81,15 +73,7 @@ class ContextTest extends \PHPUnit_Framework_TestCase
         $this->context->addGroup('foo');
         $this->context->addGroup('bar');
 
-        $this->assertEquals(['foo', 'bar'], $this->context->getGroups());
-    }
-
-    /**
-     * @expectedException \InvalidArgumentException
-     */
-    public function testInvalidGroup()
-    {
-        $this->context->addGroup(new \stdClass());
+        $this->assertEquals(array('foo', 'bar'), $this->context->getGroups());
     }
 
     public function testVersion()
@@ -99,6 +83,9 @@ class ContextTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('1.3.2', $this->context->getVersion());
     }
 
+    /**
+     * @group legacy
+     */
     public function testMaxDepth()
     {
         $this->context->setMaxDepth(10);
@@ -111,5 +98,16 @@ class ContextTest extends \PHPUnit_Framework_TestCase
         $this->context->setSerializeNull(true);
 
         $this->assertEquals(true, $this->context->getSerializeNull());
+    }
+
+    public function testExclusionStrategy()
+    {
+        $strategy1 = $this->getMockBuilder(ExclusionStrategyInterface::class)->getMock();
+        $strategy2 = $this->getMockBuilder(ExclusionStrategyInterface::class)->getMock();
+
+        $this->context->addExclusionStrategy($strategy1);
+        $this->context->addExclusionStrategy($strategy2);
+
+        $this->assertEquals([$strategy1, $strategy2], $this->context->getExclusionStrategies());
     }
 }

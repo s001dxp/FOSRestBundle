@@ -4,8 +4,8 @@ Body Listener
 The Request body listener makes it possible to decode the contents of a request
 in order to populate the "request" parameter bag of the Request. This for
 example allows to receive data that normally would be sent via POST as
-``application/x-www-form-urlencode`` in a different format (for example
-application/json) in a PUT.
+``application/x-www-form-urlencoded`` in a different format (for example
+``application/json``) in a PUT.
 
 Decoders
 ~~~~~~~~
@@ -56,6 +56,11 @@ to camel cased ones, you can use the ``camel_keys`` array normalizer:
         body_listener:
             array_normalizer: fos_rest.normalizer.camel_keys
 
+.. note::
+
+    If you want to ignore leading underscores, for example in ``_username`` you can
+    instead use the ``fos_rest.normalizer.camel_keys_with_leading_underscore`` service.
+
 Sometimes an array contains a key, which once normalized, will override an
 existing array key. For example ``foo_bar`` and ``foo_Bar`` will both lead to
 ``fooBar``. If the normalizer receives this data, the listener will throw a
@@ -88,3 +93,20 @@ If you want form data to be normalized, you can use the ``forms`` flag:
             array_normalizer:
                 service: fos_rest.normalizer.camel_keys
                 forms: true
+
+Using the ArrayNormalizer with login forms
+------------------------------------------
+
+If you use the default configuration for the csrf token fieldname (``_csrf_token``)
+the Array normalizer will mangle the field name. To make it work, use a name that
+is camelcased, like this:
+
+.. code-block:: yaml
+
+    security:
+        firewalls:
+            admin:
+            # ...
+                form_login:
+                # ...
+                    csrf_parameter: _csrfToken

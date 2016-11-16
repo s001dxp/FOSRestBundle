@@ -16,8 +16,48 @@ use Symfony\Component\HttpFoundation\Request;
 
 class UsersController extends Controller
 {
+    public function copyUserAction($id)
+    {
+    }
+
     /**
-     * [OPTION] /users.
+     * [PROPFIND] /users/{id}/props/{property}.
+     *
+     * @param $id
+     * @param $property
+     */
+    public function propfindUserPropsAction($id, $property)
+    {
+    }
+
+    /**
+     * [PROPPATCH] /users/{id}/props/{property}.
+     *
+     * @param $id
+     * @param $property
+     */
+    public function proppatchUserPropsAction($id, $property)
+    {
+    }
+
+    /**
+     * [MOVE] /users/{id}.
+     *
+     * @param $id
+     */
+    public function moveUserAction($id)
+    {
+    }
+
+    /**
+     * [MKCOL] /users.
+     */
+    public function mkcolUsersAction()
+    {
+    }
+
+    /**
+     * [OPTIONS] /users.
      */
     public function optionsUsersAction()
     {
@@ -72,7 +112,7 @@ class UsersController extends Controller
     }
 
     /**
-     * [PATCH] /users/{slug}/lock.
+     * [LOCK] /users/{slug}.
      *
      * @param $slug
      */
@@ -80,11 +120,12 @@ class UsersController extends Controller
     {
     }
 
-    /**
-     * [GET] /users/{slug}/comments.
-     *
-     * @param $slug
-     */
+    public function unlockUserAction($slug)
+    {
+    }
+
+ // [PATCH] /users/{slug}/unlock
+
     public function getUserCommentsAction($slug)
     {
     }

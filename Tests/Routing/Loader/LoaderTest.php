@@ -17,6 +17,7 @@ use FOS\RestBundle\Request\ParamReader;
 use FOS\RestBundle\Routing\Loader\Reader\RestActionReader;
 use FOS\RestBundle\Routing\Loader\Reader\RestControllerReader;
 use FOS\RestBundle\Routing\Loader\RestRouteLoader;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -27,9 +28,9 @@ use Symfony\Component\Yaml\Yaml;
 abstract class LoaderTest extends \PHPUnit_Framework_TestCase
 {
     /**
-     * @var \Symfony\Component\DependencyInjection\ContainerBuilder
+     * @var ContainerBuilder
      */
-    protected $containerMock;
+    protected $container;
 
     /**
      * Load routes etalon from yml fixture file under Tests\Fixtures directory.
@@ -58,8 +59,8 @@ abstract class LoaderTest extends \PHPUnit_Framework_TestCase
     protected function getControllerLoader(array $formats = [])
     {
         // This check allows to override the container
-        if ($this->containerMock === null) {
-            $this->containerMock = $this->getMockBuilder('Symfony\Component\DependencyInjection\ContainerBuilder')
+        if ($this->container === null) {
+            $this->container = $this->getMockBuilder(ContainerBuilder::class)
                 ->disableOriginalConstructor()
                 ->setMethods(['get', 'has'])
                 ->getMock();
@@ -78,6 +79,6 @@ abstract class LoaderTest extends \PHPUnit_Framework_TestCase
         $ar = new RestActionReader($annotationReader, $paramReader, $inflector, true, $formats);
         $cr = new RestControllerReader($ar, $annotationReader);
 
-        return new RestRouteLoader($this->containerMock, $l, $p, $cr, 'html');
+        return new RestRouteLoader($this->container, $l, $p, $cr, 'html');
     }
 }

@@ -17,6 +17,7 @@ use FOS\RestBundle\FOSRestBundle;
 use FOS\RestBundle\View\View;
 use FOS\RestBundle\View\ViewHandler;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -32,11 +33,6 @@ class ViewResponseListenerTest extends \PHPUnit_Framework_TestCase
     public $listener;
 
     /**
-     * @var \Symfony\Component\DependencyInjection\Container|\PHPUnit_Framework_MockObject_MockObject
-     */
-    public $container;
-
-    /**
      * @var \FOS\RestBundle\View\ViewHandlerInterface|\PHPUnit_Framework_MockObject_MockObject
      */
     public $viewHandler;
@@ -45,6 +41,10 @@ class ViewResponseListenerTest extends \PHPUnit_Framework_TestCase
      * @var \Symfony\Bundle\FrameworkBundle\Templating\EngineInterface|\PHPUnit_Framework_MockObject_MockObject
      */
     public $templating;
+
+    private $router;
+    private $serializer;
+    private $requestStack;
 
     /**
      * @param Request $request
@@ -86,53 +86,23 @@ class ViewResponseListenerTest extends \PHPUnit_Framework_TestCase
         return $event;
     }
 
-    public function testOnKernelController()
-    {
-        $request = new Request();
-        $request->attributes->set('_view', 'foo');
-        $event = $this->getFilterEvent($request);
-
-        $this->listener->onKernelController($event);
-
-        $this->assertEquals('foo', $request->attributes->get('_template'));
-    }
-
-    public function testOnKernelControllerNoZone()
-    {
-        $request = new Request();
-        $request->attributes->set(FOSRestBundle::ZONE_ATTRIBUTE, false);
-        $request->attributes->set('_view', 'foo');
-        $event = $this->getFilterEvent($request);
-
-        $this->listener->onKernelController($event);
-
-        $this->assertNull($request->attributes->get('_template'));
-    }
-
-    public function testOnKernelControllerNoView()
-    {
-        $request = new Request();
-        $event = $this->getFilterEvent($request);
-
-        $this->listener->onKernelController($event);
-
-        $this->assertNull($request->attributes->get('_template'));
-    }
-
     public function testOnKernelView()
     {
-        $template = $this->getMockBuilder('Symfony\Bundle\FrameworkBundle\Templating\TemplateReference')
+        $template = $this->getMockBuilder('Symfony\Component\Templating\TemplateReferenceInterface')
             ->disableOriginalConstructor()
             ->getMock();
         $template->expects($this->once())
             ->method('set')
             ->with('format', null);
 
+        $annotation = new ViewAnnotation([]);
+        $annotation->setOwner([new FooController(), 'onKernelViewAction']);
+        $annotation->setTemplate($template);
+
         $request = new Request();
-        $request->attributes->set('_template_default_vars', ['foo', 'halli']);
         $request->attributes->set('foo', 'baz');
         $request->attributes->set('halli', 'galli');
-        $request->attributes->set('_template', $template);
+        $request->attributes->set('_template', $annotation);
         $response = new Response();
 
         $view = $this->getMockBuilder('FOS\RestBundle\View\View')
@@ -142,78 +112,36 @@ class ViewResponseListenerTest extends \PHPUnit_Framework_TestCase
             ->method('getFormat')
             ->will($this->onConsecutiveCalls(null, 'html'));
 
-        $this->viewHandler->expects($this->once())
+        $viewHandler = $this->getMockBuilder('FOS\RestBundle\View\ViewHandlerInterface')->getMock();
+        $viewHandler->expects($this->once())
             ->method('handle')
             ->with($this->isInstanceOf('FOS\RestBundle\View\View'), $this->equalTo($request))
             ->will($this->returnValue($response));
-        $this->viewHandler->expects($this->once())
+        $viewHandler->expects($this->once())
             ->method('isFormatTemplating')
             ->with('html')
             ->will($this->returnValue(true));
 
+        $this->listener = new ViewResponseListener($viewHandler, false);
+
         $event = $this->getResponseEvent($request, $view);
         $event->expects($this->once())
             ->method('setResponse');
-
-        $this->container->expects($this->once())
-            ->method('get')
-            ->with($this->equalTo('fos_rest.view_handler'))
-            ->will($this->returnValue($this->viewHandler));
 
         $this->listener->onKernelView($event);
     }
 
     public function testOnKernelViewWhenControllerResultIsNotViewObject()
     {
+        $this->createViewResponseListener();
+
         $request = new Request();
 
         $event = $this->getResponseEvent($request, []);
         $event->expects($this->never())
             ->method('setResponse');
 
-        $this->assertEquals([], $this->listener->onKernelView($event));
-    }
-
-    /**
-     * onKernelView falls back to FrameworkExtraBundles' onKernelView
-     * when fos_rest.view_response_listener.force_view is false.
-     */
-    public function testOnKernelViewFallsBackToFrameworkExtraBundle()
-    {
-        $template = $this->getMockBuilder('Symfony\Bundle\FrameworkBundle\Templating\TemplateReference')
-            ->disableOriginalConstructor()
-            ->getMock();
-
-        $request = new Request();
-        $request->attributes->set('_template', $template);
-
-        $this->templating->expects($this->any())
-            ->method('renderResponse')
-            ->with($template, [])
-            ->will($this->returnValue(new Response('output')));
-        $this->templating->expects($this->any())
-            ->method('render')
-            ->with($template, [])
-            ->will($this->returnValue('output'));
-
-        $event = $this->getResponseEvent($request, []);
-        $response = null;
-
-        $event->expects($this->once())
-            ->method('setResponse')
-            ->will($this->returnCallback(function ($r) use (&$response) {
-                $response = $r;
-            }));
-
-        $this->container->expects($this->once())
-            ->method('get')
-            ->with($this->equalTo('templating'))
-            ->will($this->returnValue($this->templating));
-
-        $this->listener->onKernelView($event);
-
-        $this->assertInstanceOf('Symfony\Component\HttpFoundation\Response', $response);
-        $this->assertSame('output', $response->getContent());
+        $this->assertEquals(null, $this->listener->onKernelView($event));
     }
 
     public static function statusCodeProvider()
@@ -230,26 +158,15 @@ class ViewResponseListenerTest extends \PHPUnit_Framework_TestCase
      */
     public function testStatusCode($annotationCode, $viewCode, $expectedCode)
     {
+        $this->createViewResponseListener(['json' => true]);
+
         $viewAnnotation = new ViewAnnotation([]);
+        $viewAnnotation->setOwner([$this, 'statusCodeProvider']);
         $viewAnnotation->setStatusCode($annotationCode);
 
         $request = new Request();
         $request->setRequestFormat('json');
-        $request->attributes->set('_view', $viewAnnotation);
-
-        $this->viewHandler = new ViewHandler(['json' => true]);
-        $this->viewHandler->setContainer($this->container);
-
-        // This is why we avoid container dependencies!
-        $that = $this;
-        $this->container->expects($this->exactly(2))
-            ->method('get')
-            ->with($this->logicalOr('fos_rest.view_handler', 'fos_rest.templating'))
-            ->will($this->returnCallback(function ($service) use ($that) {
-                return $service === 'fos_rest.view_handler' ?
-                    $that->viewHandler :
-                    $that->templating;
-            }));
+        $request->attributes->set('_template', $viewAnnotation);
 
         $this->templating->expects($this->any())
             ->method('render')
@@ -287,26 +204,15 @@ class ViewResponseListenerTest extends \PHPUnit_Framework_TestCase
      */
     public function testSerializerEnableMaxDepthChecks($enableMaxDepthChecks, $expectedMaxDepth)
     {
+        $this->createViewResponseListener(['json' => true]);
+
         $viewAnnotation = new ViewAnnotation([]);
+        $viewAnnotation->setOwner([$this, 'testSerializerEnableMaxDepthChecks']);
         $viewAnnotation->setSerializerEnableMaxDepthChecks($enableMaxDepthChecks);
 
         $request = new Request();
         $request->setRequestFormat('json');
-        $request->attributes->set('_view', $viewAnnotation);
-
-        $this->viewHandler = new ViewHandler(['json' => true]);
-        $this->viewHandler->setContainer($this->container);
-
-        // This is why we avoid container dependencies!
-        $that = $this;
-        $this->container->expects($this->exactly(2))
-            ->method('get')
-            ->with($this->logicalOr('fos_rest.view_handler', 'fos_rest.templating'))
-            ->will($this->returnCallback(function ($service) use ($that) {
-                        return $service === 'fos_rest.view_handler' ?
-                            $that->viewHandler :
-                            $that->templating;
-                    }));
+        $request->attributes->set('_template', $viewAnnotation);
 
         $this->templating->expects($this->any())
             ->method('render')
@@ -318,57 +224,42 @@ class ViewResponseListenerTest extends \PHPUnit_Framework_TestCase
 
         $this->listener->onKernelView($event);
 
-        $context = $view->getSerializationContext();
-        $maxDepth = $context->getMaxDepth();
+        $context = $view->getContext();
 
-        $this->assertEquals($expectedMaxDepth, $maxDepth);
+        $this->assertEquals($expectedMaxDepth, $context->getMaxDepth(false));
+        $this->assertEquals($enableMaxDepthChecks, $context->isMaxDepthEnabled());
     }
 
     public function getDataForDefaultVarsCopy()
     {
         return [
-            [true, false, false],
-            [true, true, true],
-            [false, null, true],
+            [false],
+            [true],
         ];
     }
 
     /**
      * @dataProvider getDataForDefaultVarsCopy
      */
-    public function testViewWithNoCopyDefaultVars($createAnnotation, $populateDefaultVars, $shouldCopy)
+    public function testViewWithNoCopyDefaultVars($populateDefaultVars)
     {
+        $this->createViewResponseListener(['html' => true]);
+
         $request = new Request();
-        $request->attributes->set('_template_default_vars', ['customer']);
         $request->attributes->set('customer', 'A person goes here');
         $view = View::create();
 
-        if ($createAnnotation) {
-            $viewAnnotation = new ViewAnnotation([]);
-            $viewAnnotation->setPopulateDefaultVars($populateDefaultVars);
-            $request->attributes->set('_view', $viewAnnotation);
-        }
+        $viewAnnotation = new ViewAnnotation([]);
+        $viewAnnotation->setOwner([new FooController(), 'viewAction']);
+        $viewAnnotation->setPopulateDefaultVars($populateDefaultVars);
+        $request->attributes->set('_template', $viewAnnotation);
 
         $event = $this->getResponseEvent($request, $view);
-
-        $this->viewHandler = new ViewHandler(['html' => true]);
-        $this->viewHandler->setContainer($this->container);
-
-        // This is why we avoid container dependencies!
-        $that = $this;
-        $this->container->expects($this->exactly(2))
-            ->method('get')
-            ->with($this->logicalOr('fos_rest.view_handler', 'fos_rest.templating'))
-            ->will($this->returnCallback(function ($service) use ($that) {
-                return $service === 'fos_rest.view_handler' ?
-                    $that->viewHandler :
-                    $that->templating;
-            }));
 
         $this->listener->onKernelView($event);
 
         $data = $view->getData();
-        if ($shouldCopy) {
+        if ($populateDefaultVars) {
             $this->assertArrayHasKey('customer', $data);
             $this->assertEquals('A person goes here', $data['customer']);
         } else {
@@ -378,9 +269,32 @@ class ViewResponseListenerTest extends \PHPUnit_Framework_TestCase
 
     protected function setUp()
     {
-        $this->viewHandler = $this->getMock('FOS\RestBundle\View\ViewHandlerInterface');
-        $this->templating = $this->getMock('Symfony\Bundle\FrameworkBundle\Templating\EngineInterface');
-        $this->container = $this->getMock('Symfony\Component\DependencyInjection\ContainerInterface');
-        $this->listener = new ViewResponseListener($this->container);
+        $this->router = $this->getMockBuilder('Symfony\Component\Routing\RouterInterface')->getMock();
+        $this->serializer = $this->getMockBuilder('FOS\RestBundle\Serializer\Serializer')->getMock();
+        $this->templating = $this->getMockBuilder('Symfony\Bundle\FrameworkBundle\Templating\EngineInterface')->getMock();
+        $this->requestStack = new RequestStack();
+    }
+
+    private function createViewResponseListener($formats = null)
+    {
+        $this->viewHandler = new ViewHandler($this->router, $this->serializer, $this->templating, $this->requestStack, $formats);
+        $this->listener = new ViewResponseListener($this->viewHandler, false);
+    }
+}
+
+class FooController
+{
+    /**
+     * @see testOnKernelView()
+     */
+    public function onKernelViewAction($foo, $halli)
+    {
+    }
+
+    /**
+     * @see testViewWithNoCopyDefaultVars()
+     */
+    public function viewAction($customer)
+    {
     }
 }

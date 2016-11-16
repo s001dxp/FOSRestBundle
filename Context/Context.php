@@ -11,45 +11,51 @@
 
 namespace FOS\RestBundle\Context;
 
+use JMS\Serializer\Exclusion\ExclusionStrategyInterface;
+
 /**
- * {@inheritdoc}
+ * Stores the serialization or deserialization context (groups, version, ...).
  *
  * @author Ener-Getick <egetick@gmail.com>
  */
-class Context implements ContextInterface, GroupableContextInterface, VersionableContextInterface, MaxDepthContextInterface, SerializeNullContextInterface
+final class Context
 {
     /**
      * @var array
      */
-    protected $attributes;
+    private $attributes = array();
     /**
      * @var int|null
      */
-    protected $version;
+    private $version;
     /**
-     * @var array
+     * @var array|null
      */
-    protected $groups;
+    private $groups;
     /**
      * @var int
      */
-    protected $maxDepth;
+    private $maxDepth;
     /**
      * @var bool
      */
-    protected $serializeNull;
-
+    private $isMaxDepthEnabled;
     /**
-     * Constructor.
+     * @var bool
      */
-    public function __construct()
-    {
-        $this->attributes = [];
-        $this->groups = [];
-    }
+    private $serializeNull;
+    /**
+     * @var ExclusionStrategyInterface[]
+     */
+    private $exclusionStrategies = array();
 
     /**
-     * {@inheritdoc}
+     * Sets an attribute.
+     *
+     * @param string $key
+     * @param mixed  $value
+     *
+     * @return self
      */
     public function setAttribute($key, $value)
     {
@@ -59,7 +65,11 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Checks if contains a normalization attribute.
+     *
+     * @param string $key
+     *
+     * @return bool
      */
     public function hasAttribute($key)
     {
@@ -67,7 +77,11 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Gets an attribute.
+     *
+     * @param string $key
+     *
+     * @return mixed
      */
     public function getAttribute($key)
     {
@@ -77,7 +91,9 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Gets the attributes.
+     *
+     * @return array
      */
     public function getAttributes()
     {
@@ -85,7 +101,11 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Sets the normalization version.
+     *
+     * @param int|null $version
+     *
+     * @return self
      */
     public function setVersion($version)
     {
@@ -95,7 +115,9 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Gets the normalization version.
+     *
+     * @return int|null
      */
     public function getVersion()
     {
@@ -103,12 +125,16 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Adds a normalization group.
+     *
+     * @param string $group
+     *
+     * @return self
      */
     public function addGroup($group)
     {
-        if (!is_string($group)) {
-            throw new \InvalidArgumentException('A normalization group must be a string.');
+        if (null === $this->groups) {
+            $this->groups = [];
         }
         if (!in_array($group, $this->groups)) {
             $this->groups[] = $group;
@@ -118,7 +144,11 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Adds normalization groups.
+     *
+     * @param string[] $groups
+     *
+     * @return self
      */
     public function addGroups(array $groups)
     {
@@ -130,7 +160,9 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Gets the normalization groups.
+     *
+     * @return string[]|null
      */
     public function getGroups()
     {
@@ -138,25 +170,82 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Set the normalization groups.
+     *
+     * @param string[]|null $groups
+     *
+     * @return self
+     */
+    public function setGroups(array $groups = null)
+    {
+        $this->groups = $groups;
+
+        return $this;
+    }
+
+    /**
+     * Sets the normalization max depth.
+     *
+     * @param int|null $maxDepth
+     *
+     * @return self
+     *
+     * @deprecated since 2.1, to be removed in 3.0. Use {@link self::enableMaxDepth()} and {@link self::disableMaxDepth()} instead
      */
     public function setMaxDepth($maxDepth)
     {
+        if (1 === func_num_args() || func_get_arg(1)) {
+            @trigger_error(sprintf('%s is deprecated since version 2.1 and will be removed in 3.0. Use %s::enableMaxDepth() and %s::disableMaxDepth() instead.', __METHOD__, __CLASS__, __CLASS__), E_USER_DEPRECATED);
+        }
         $this->maxDepth = $maxDepth;
 
         return $this;
     }
 
     /**
-     * {@inheritdoc}
+     * Gets the normalization max depth.
+     *
+     * @return int|null
+     *
+     * @deprecated since version 2.1, to be removed in 3.0. Use {@link self::isMaxDepthEnabled()} instead
      */
     public function getMaxDepth()
     {
+        if (0 === func_num_args() || func_get_arg(0)) {
+            @trigger_error(sprintf('%s is deprecated since version 2.1 and will be removed in 3.0. Use %s::isMaxDepthEnabled() instead.', __METHOD__, __CLASS__), E_USER_DEPRECATED);
+        }
+
         return $this->maxDepth;
     }
 
+    public function enableMaxDepth()
+    {
+        $this->isMaxDepthEnabled = true;
+
+        return $this;
+    }
+
+    public function disableMaxDepth()
+    {
+        $this->isMaxDepthEnabled = false;
+
+        return $this;
+    }
+
     /**
-     * {@inheritdoc}
+     * @return bool|null
+     */
+    public function isMaxDepthEnabled()
+    {
+        return $this->isMaxDepthEnabled;
+    }
+
+    /**
+     * Sets serialize null.
+     *
+     * @param bool|null $serializeNull
+     *
+     * @return self
      */
     public function setSerializeNull($serializeNull)
     {
@@ -166,10 +255,36 @@ class Context implements ContextInterface, GroupableContextInterface, Versionabl
     }
 
     /**
-     * {@inheritdoc}
+     * Gets serialize null.
+     *
+     * @return bool|null
      */
     public function getSerializeNull()
     {
         return $this->serializeNull;
+    }
+
+    /**
+     * Gets the array of exclusion strategies.
+     *
+     * Notice: This method only applies to the JMS serializer adapter.
+     *
+     * @return ExclusionStrategyInterface[]
+     */
+    public function getExclusionStrategies()
+    {
+        return $this->exclusionStrategies;
+    }
+
+    /**
+     * Adds an exclusion strategy.
+     *
+     * Notice: This method only applies to the JMS serializer adapter.
+     *
+     * @param ExclusionStrategyInterface $exclusionStrategy
+     */
+    public function addExclusionStrategy(ExclusionStrategyInterface $exclusionStrategy)
+    {
+        $this->exclusionStrategies[] = $exclusionStrategy;
     }
 }

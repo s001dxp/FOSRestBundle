@@ -21,7 +21,10 @@ to enable a few additional listeners:
     fos_rest:
         param_fetcher_listener: true
         body_listener: true
-        format_listener: true
+        format_listener:
+            enabled: true
+            rules:
+                - { path: '^/', priorities: ['json', 'xml'], fallback_format: 'html' }
         versioning: true
         view:
             view_response_listener: 'force'
@@ -65,8 +68,11 @@ Body Listener
 The Request body listener makes it possible to decode the contents of a request
 in order to populate the "request" parameter bag of the Request. This, for
 example, allows to receive data that normally would be sent via POST as
-``application/x-www-form-urlencode`` in a different format (for example
-application/json) in a PUT.
+``application/x-www-form-urlencoded`` in a different format (for example
+``application/json``) in a PUT. Please note that this listener is supposed to
+allow you to decode and normalize data. If you want to deserialize data,
+meaning getting an object of your choice, you will be better off using the
+request body converter listener, documented below.
 
 For details see :doc:`Body Listener <body_listener>`.
 
@@ -187,7 +193,7 @@ You need to enable this listener as follows, as it is disabled by default:
             # all requests using the 'json' format will return a 403 on an access denied violation
             json: true
 
-It is also recommended to enable the exception controller described in the next chapter.
+Note: The access_denied_listener doesn't return a response itself and must be coupled with an exception listener returning a response (see the :doc:`FOSRestBundle exception controller <4-exception-controller-support>`. or the `twig exception controller`_).
 
 Zone Listener
 =============
@@ -232,3 +238,4 @@ That was it!
 .. _`ParamConverters`: http://symfony.com/doc/master/bundles/SensioFrameworkExtraBundle/annotations/converters.html
 .. _`mime type listener`: http://symfony.com/doc/current/cookbook/request/mime_type.html
 .. _`Test Cases for HTTP Test Cases for the HTTP WWW-Authenticate header field`: http://greenbytes.de/tech/tc/httpauth/
+.. _`twig exception controller`: https://symfony.com/doc/current/cookbook/controller/error_pages.html

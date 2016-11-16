@@ -11,53 +11,39 @@
 
 namespace FOS\RestBundle\EventListener;
 
-use FOS\RestBundle\View\View;
+use FOS\RestBundle\Controller\Annotations\View as ViewAnnotation;
 use FOS\RestBundle\FOSRestBundle;
-use Sensio\Bundle\FrameworkExtraBundle\EventListener\TemplateListener;
-use Symfony\Bundle\FrameworkBundle\Templating\TemplateReference;
-use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpKernel\Event\FilterControllerEvent;
-use Symfony\Component\HttpKernel\Event\GetResponseForControllerResultEvent;
+use FOS\RestBundle\View\View;
+use FOS\RestBundle\View\ViewHandlerInterface;
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Event\GetResponseForControllerResultEvent;
+use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Templating\TemplateReferenceInterface;
 
 /**
  * The ViewResponseListener class handles the View core event as well as the "@extra:Template" annotation.
  *
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
+ *
+ * @internal
  */
-class ViewResponseListener extends TemplateListener
+class ViewResponseListener implements EventSubscriberInterface
 {
-    protected $container;
+    private $viewHandler;
+    private $forceView;
 
     /**
      * Constructor.
      *
-     * @param ContainerInterface $container
+     * @param ViewHandlerInterface $viewHandler
+     * @param bool                 $forceView
      */
-    public function __construct(ContainerInterface $container)
+    public function __construct(ViewHandlerInterface $viewHandler, $forceView)
     {
-        $this->container = $container;
-    }
-
-    /**
-     * Guesses the template name to render and its variables and adds them to
-     * the request object.
-     *
-     * @param FilterControllerEvent $event
-     */
-    public function onKernelController(FilterControllerEvent $event)
-    {
-        $request = $event->getRequest();
-
-        if (!$request->attributes->get(FOSRestBundle::ZONE_ATTRIBUTE, true)) {
-            return;
-        }
-
-        if ($configuration = $request->attributes->get('_view')) {
-            $request->attributes->set('_template', $configuration);
-        }
-
-        parent::onKernelController($event);
+        $this->viewHandler = $viewHandler;
+        $this->forceView = $forceView;
     }
 
     /**
@@ -74,53 +60,54 @@ class ViewResponseListener extends TemplateListener
             return false;
         }
 
-        /** @var \FOS\RestBundle\Controller\Annotations\View $configuration */
-        $configuration = $request->attributes->get('_view');
+        $configuration = $request->attributes->get('_template');
 
         $view = $event->getControllerResult();
-        $customViewDefined = true;
         if (!$view instanceof View) {
-            if (!$configuration && !$this->container->getParameter('fos_rest.view_response_listener.force_view')) {
-                return parent::onKernelView($event);
+            if (!$configuration instanceof ViewAnnotation && !$this->forceView) {
+                return;
             }
 
             $view = new View($view);
-            $customViewDefined = false;
         }
 
-        if ($configuration) {
-            $context = $view->getSerializationContext();
+        if ($configuration instanceof ViewAnnotation) {
             if ($configuration->getTemplateVar()) {
                 $view->setTemplateVar($configuration->getTemplateVar());
             }
-            if ($configuration->getStatusCode() && (null === $view->getStatusCode() || Response::HTTP_OK === $view->getStatusCode())) {
+            if (null !== $configuration->getStatusCode() && (null === $view->getStatusCode() || Response::HTTP_OK === $view->getStatusCode())) {
                 $view->setStatusCode($configuration->getStatusCode());
             }
-            if ($configuration->getSerializerGroups() && !$customViewDefined) {
+
+            $context = $view->getContext();
+            if ($configuration->getSerializerGroups()) {
                 $context->addGroups($configuration->getSerializerGroups());
             }
             if ($configuration->getSerializerEnableMaxDepthChecks()) {
-                $context->setMaxDepth(0);
+                $context->setMaxDepth(0, false);
             }
-            $populateDefaultVars = $configuration->isPopulateDefaultVars();
+            if (true === $configuration->getSerializerEnableMaxDepthChecks()) {
+                $context->enableMaxDepth();
+            } elseif (false === $configuration->getSerializerEnableMaxDepthChecks()) {
+                $context->disableMaxDepth();
+            }
+
+            list($controller, $action) = $configuration->getOwner();
+            $vars = $this->getDefaultVars($configuration, $controller, $action);
         } else {
-            $populateDefaultVars = true;
+            $vars = null;
         }
 
         if (null === $view->getFormat()) {
             $view->setFormat($request->getRequestFormat());
         }
 
-        $vars = $request->attributes->get('_template_vars');
-        if (!$vars && $populateDefaultVars) {
-            $vars = $request->attributes->get('_template_default_vars');
-        }
-
-        $viewHandler = $this->container->get('fos_rest.view_handler');
-
-        if ($viewHandler->isFormatTemplating($view->getFormat())) {
-            if (!empty($vars)) {
-                $parameters = (array) $viewHandler->prepareTemplateParameters($view);
+        if ($this->viewHandler->isFormatTemplating($view->getFormat())
+            && !$view->getRoute()
+            && !$view->getLocation()
+        ) {
+            if (null !== $vars && 0 !== count($vars)) {
+                $parameters = (array) $this->viewHandler->prepareTemplateParameters($view);
                 foreach ($vars as $var) {
                     if (!array_key_exists($var, $parameters)) {
                         $parameters[$var] = $request->attributes->get($var);
@@ -129,9 +116,8 @@ class ViewResponseListener extends TemplateListener
                 $view->setData($parameters);
             }
 
-            $template = $request->attributes->get('_template');
-            if ($template) {
-                if ($template instanceof TemplateReference) {
+            if ($configuration && ($template = $configuration->getTemplate()) && !$view->getTemplate()) {
+                if ($template instanceof TemplateReferenceInterface) {
                     $template->set('format', null);
                 }
 
@@ -139,8 +125,44 @@ class ViewResponseListener extends TemplateListener
             }
         }
 
-        $response = $viewHandler->handle($view, $request);
+        $response = $this->viewHandler->handle($view, $request);
 
         $event->setResponse($response);
+    }
+
+    public static function getSubscribedEvents()
+    {
+        // Must be executed before SensioFrameworkExtraBundle's listener
+        return array(
+            KernelEvents::VIEW => array('onKernelView', 30),
+        );
+    }
+
+    /**
+     * @param Request  $request
+     * @param Template $template
+     * @param object   $controller
+     * @param string   $action
+     *
+     * @return array
+     *
+     * @see \Sensio\Bundle\FrameworkExtraBundle\EventListener\TemplateListener::resolveDefaultParameters()
+     */
+    private function getDefaultVars(Template $template = null, $controller, $action)
+    {
+        if (0 !== count($arguments = $template->getVars())) {
+            return $arguments;
+        }
+
+        if (!$template instanceof ViewAnnotation || $template->isPopulateDefaultVars()) {
+            $r = new \ReflectionObject($controller);
+
+            $arguments = array();
+            foreach ($r->getMethod($action)->getParameters() as $param) {
+                $arguments[] = $param->getName();
+            }
+
+            return $arguments;
+        }
     }
 }

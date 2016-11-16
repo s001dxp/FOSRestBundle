@@ -12,23 +12,24 @@
 namespace FOS\RestBundle\EventListener;
 
 use FOS\RestBundle\FOSRestBundle;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\Event\GetResponseForExceptionEvent;
-use Symfony\Component\HttpKernel\EventListener\ExceptionListener;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
  * This listener handles ensures that for specific formats AccessDeniedExceptions
  * will return a 403 regardless of how the firewall is configured.
  *
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
+ *
+ * @internal
  */
-class AccessDeniedListener extends ExceptionListener
+class AccessDeniedListener implements EventSubscriberInterface
 {
     private $formats;
     private $challenge;
@@ -36,17 +37,14 @@ class AccessDeniedListener extends ExceptionListener
     /**
      * Constructor.
      *
-     * @param array           $formats    An array with keys corresponding to request formats or content types
-     *                                    that must be processed by this listener
-     * @param string          $challenge
-     * @param string          $controller
-     * @param LoggerInterface $logger
+     * @param array  $formats   An array with keys corresponding to request formats or content types
+     *                          that must be processed by this listener
+     * @param string $challenge
      */
-    public function __construct($formats, $challenge, $controller, LoggerInterface $logger = null)
+    public function __construct($formats, $challenge)
     {
         $this->formats = $formats;
         $this->challenge = $challenge;
-        parent::__construct($controller, $logger);
     }
 
     public function onKernelException(GetResponseForExceptionEvent $event)
@@ -74,7 +72,6 @@ class AccessDeniedListener extends ExceptionListener
         if ($exception instanceof AccessDeniedException) {
             $exception = new AccessDeniedHttpException('You do not have the necessary permissions', $exception);
             $event->setException($exception);
-            parent::onKernelException($event);
         } elseif ($exception instanceof AuthenticationException) {
             if ($this->challenge) {
                 $exception = new UnauthorizedHttpException($this->challenge, 'You are not authenticated', $exception);
@@ -82,7 +79,6 @@ class AccessDeniedListener extends ExceptionListener
                 $exception = new HttpException(401, 'You are not authenticated', $exception);
             }
             $event->setException($exception);
-            parent::onKernelException($event);
         }
 
         $handling = false;
