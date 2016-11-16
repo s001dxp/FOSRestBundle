@@ -177,7 +177,7 @@ class RestActionReader
             if (empty($parent) || '/' === substr($parent, -1)) {
                 throw new \InvalidArgumentException(
                     "Every parent controller must have `get{SINGULAR}Action(\$id)` method\n".
-                    'where {SINGULAR} is a singular form of associated object'
+                    'where {SINGULAR} is a singular form of associated object: ' . $method->class
                 );
             }
         }
@@ -362,14 +362,24 @@ class RestActionReader
     private function getHttpMethodAndResourcesFromMethod(\ReflectionMethod $method, $resource)
     {
         // if method doesn't match regex - skip
-        if (!preg_match('/([a-z][_a-z0-9]+)(.*)Action/', $method->getName(), $matches)) {
-            return false;
-        }
+		if(!preg_match('/([a-z][_a-z0-9]+)(.*)Action/', $method->getName(), $matches))
+		{
+			return false;
+		}
 
         $httpMethod = strtolower($matches[1]);
-        $resources = preg_split(
-            '/([A-Z][^A-Z]*)/', $matches[2], -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE
-        );
+
+		$SkipHierarchyCheck = (bool) $this->readMethodAnnotation($method, 'SkipHierarchyCheck');
+        if(!$SkipHierarchyCheck)
+		{
+			$resources = preg_split(
+				'/([A-Z][^A-Z]*)/', $matches[2], -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE
+			);
+		}
+		else{
+			$resources = [$matches[2]];
+		}
+
         $isCollection = false;
         $isInflectable = true;
 

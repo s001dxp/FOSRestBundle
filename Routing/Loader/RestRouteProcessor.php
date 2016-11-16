@@ -33,7 +33,6 @@ class RestRouteProcessor
      * @param string          $namePrefix  Routes names prefix
      * @param string          $type        The resource type
      * @param string          $currentDir  Current directory of the loader
-     *
      * @return RouteCollection A RouteCollection instance
      */
     public function importResource(

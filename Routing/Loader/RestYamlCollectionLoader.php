@@ -76,6 +76,7 @@ class RestYamlCollectionLoader extends YamlFileLoader
                 $requirements = isset($config['requirements']) ? $config['requirements']   : [];
                 $defaults = isset($config['defaults'])     ? $config['defaults']       : [];
                 $options = isset($config['options'])      ? $config['options']        : [];
+                $terminalParent = isset($config['terminal_parent'])         ? $config['terminal_parent']           : null;
                 $currentDir = dirname($path);
 
                 $parents = [];
@@ -87,6 +88,12 @@ class RestYamlCollectionLoader extends YamlFileLoader
                     $parents = $this->collectionParents[$parent];
                 }
 
+                if(null !== $terminalParent)
+                {
+                    $terminalParentName = end($this->collectionParents[$terminalParent]);
+                    $offset = array_search($terminalParentName, $parents);
+                    $parents = array_slice($parents, $offset);
+                }
                 $imported = $this->processor->importResource($this, $resource, $parents, $prefix, $namePrefix, $type, $currentDir);
 
                 if ($imported instanceof RestRouteCollection) {
