@@ -12,6 +12,7 @@
 namespace FOS\RestBundle\Tests\DependencyInjection;
 
 use FOS\RestBundle\DependencyInjection\FOSRestExtension;
+use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\DefinitionDecorator;
@@ -474,7 +475,7 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
     /**
      * @dataProvider getLoadBadCodeValueThrowsExceptionData
      *
-     * @expectedException Symfony\Component\Config\Definition\Exception\InvalidConfigurationException
+     * @expectedException \Symfony\Component\Config\Definition\Exception\InvalidConfigurationException
      * @expectedExceptionMessage Invalid HTTP code in fos_rest.exception.codes
      */
     public function testLoadBadCodeValueThrowsException($value)
@@ -634,7 +635,9 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $this->assertTrue($this->container->has('fos_rest.view_handler'));
 
         $viewHandler = $this->container->getDefinition('fos_rest.view_handler');
-        $this->assertInstanceOf(DefinitionDecorator::class, $viewHandler);
+
+        $childDefinitionClass = class_exists(ChildDefinition::class) ? ChildDefinition::class : DefinitionDecorator::class;
+        $this->assertInstanceOf($childDefinitionClass, $viewHandler);
     }
 
     public function testSerializerExceptionNormalizer()
@@ -672,15 +675,43 @@ class FOSRestExtensionTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('addRequestMatcher', $addRequestMatcherCalls[0][0]);
         $requestMatcherFirstId = (string) $addRequestMatcherCalls[0][1][0];
         $requestMatcherFirst = $this->container->getDefinition($requestMatcherFirstId);
-        $this->assertInstanceOf('Symfony\Component\DependencyInjection\DefinitionDecorator', $requestMatcherFirst);
+
+        $childDefinitionClass = class_exists(ChildDefinition::class) ? ChildDefinition::class : DefinitionDecorator::class;
+        $this->assertInstanceOf($childDefinitionClass, $requestMatcherFirst);
         $this->assertEquals('/api/*', $requestMatcherFirst->getArgument(0));
 
         // Second zone
         $this->assertEquals('addRequestMatcher', $addRequestMatcherCalls[1][0]);
         $requestMatcherSecondId = (string) $addRequestMatcherCalls[1][1][0];
         $requestMatcherSecond = $this->container->getDefinition($requestMatcherSecondId);
-        $this->assertInstanceOf('Symfony\Component\DependencyInjection\DefinitionDecorator', $requestMatcherSecond);
+
+        $this->assertInstanceOf($childDefinitionClass, $requestMatcherSecond);
         $this->assertEquals('/^second', $requestMatcherSecond->getArgument(0));
         $this->assertEquals(array('127.0.0.1'), $requestMatcherSecond->getArgument(3));
+    }
+
+    public function testMimeTypesArePassedArrays()
+    {
+        $config = array(
+            'fos_rest' => array(
+                'view' => array(
+                    'mime_types' => array(
+                        'json' => array('application/json', 'application/x-json'),
+                        'jpg' => 'image/jpeg',
+                        'png' => 'image/png',
+                    ),
+                ),
+            ),
+        );
+        $this->extension->load($config, $this->container);
+
+        $this->assertSame(
+            array(
+                'json' => array('application/json', 'application/x-json'),
+                'jpg' => array('image/jpeg'),
+                'png' => array('image/png'),
+            ),
+            $this->container->getDefinition('fos_rest.mime_type_listener')->getArgument(0)
+        );
     }
 }

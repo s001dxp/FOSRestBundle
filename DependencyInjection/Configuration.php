@@ -60,12 +60,14 @@ final class Configuration implements ConfigurationInterface
                 ->arrayNode('access_denied_listener')
                     ->canBeEnabled()
                     ->beforeNormalization()
-                        ->ifArray()->then(function ($v) { if (!empty($v) && empty($v['formats'])) {
-     unset($v['enabled']);
-     $v = ['enabled' => true, 'formats' => $v];
- }
+                        ->ifArray()->then(function ($v) {
+                            if (!empty($v) && empty($v['formats'])) {
+                                unset($v['enabled']);
+                                $v = ['enabled' => true, 'formats' => $v];
+                            }
 
-return $v; })
+                            return $v;
+                        })
                     ->end()
                     ->fixXmlConfig('format', 'formats')
                     ->children()
@@ -80,11 +82,12 @@ return $v; })
                 ->arrayNode('param_fetcher_listener')
                     ->beforeNormalization()
                         ->ifString()
-                        ->then(function ($v) { return ['enabled' => in_array($v, ['force', 'true']), 'force' => 'force' === $v]; })
+                        ->then(function ($v) {
+                            return ['enabled' => in_array($v, ['force', 'true']), 'force' => 'force' === $v];
+                        })
                     ->end()
                     ->canBeEnabled()
                     ->children()
-                        ->booleanNode('enabled')->defaultFalse()->end()
                         ->booleanNode('force')->defaultFalse()->end()
                         ->scalarNode('service')->defaultNull()->end()
                     ->end()
@@ -100,13 +103,13 @@ return $v; })
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->scalarNode('default_format')->defaultNull()->end()
+                        ->scalarNode('prefix_methods')->defaultTrue()->end()
                         ->scalarNode('include_format')->defaultTrue()->end()
                     ->end()
                 ->end()
                 ->arrayNode('body_converter')
-                    ->addDefaultsIfNotSet()
+                    ->canBeEnabled()
                     ->children()
-                        ->scalarNode('enabled')->defaultFalse()->end()
                         ->scalarNode('validate')->defaultFalse()->end()
                         ->scalarNode('validation_errors_argument')->defaultValue('validationErrors')->end()
                     ->end()
@@ -144,11 +147,15 @@ return $v; })
                         ->end()
                         ->scalarNode('host')->defaultNull()->end()
                         ->arrayNode('methods')
-                            ->beforeNormalization()->ifString()->then(function ($v) { return preg_split('/\s*,\s*/', $v); })->end()
+                            ->beforeNormalization()->ifString()->then(function ($v) {
+                                return preg_split('/\s*,\s*/', $v);
+                            })->end()
                             ->prototype('scalar')->end()
                         ->end()
                         ->arrayNode('ips')
-                            ->beforeNormalization()->ifString()->then(function ($v) { return array($v); })->end()
+                            ->beforeNormalization()->ifString()->then(function ($v) {
+                                return array($v);
+                            })->end()
                             ->prototype('scalar')->end()
                         ->end()
                     ->end()
@@ -199,7 +206,13 @@ return $v; })
                                 ->scalarNode('service')->defaultNull()->end()
                                 ->arrayNode('formats')
                                     ->useAttributeAsKey('name')
-                                    ->prototype('variable')->end()
+                                    ->prototype('array')
+                                        ->beforeNormalization()
+                                            ->ifString()
+                                            ->then(function ($v) { return array($v); })
+                                        ->end()
+                                        ->prototype('scalar')->end()
+                                    ->end()
                                 ->end()
                             ->end()
                         ->end()
@@ -216,11 +229,12 @@ return $v; })
                         ->arrayNode('view_response_listener')
                             ->beforeNormalization()
                                 ->ifString()
-                                ->then(function ($v) { return ['enabled' => in_array($v, ['force', 'true']), 'force' => 'force' === $v]; })
+                                ->then(function ($v) {
+                                    return ['enabled' => in_array($v, ['force', 'true']), 'force' => 'force' === $v];
+                                })
                             ->end()
                             ->canBeEnabled()
                             ->children()
-                                ->booleanNode('enabled')->defaultFalse()->end()
                                 ->booleanNode('force')->defaultFalse()->end()
                                 ->scalarNode('service')->defaultNull()->end()
                             ->end()
@@ -263,7 +277,9 @@ return $v; })
                         ->arrayNode('array_normalizer')
                             ->addDefaultsIfNotSet()
                             ->beforeNormalization()
-                                ->ifString()->then(function ($v) { return ['service' => $v]; })
+                                ->ifString()->then(function ($v) {
+                                    return ['service' => $v];
+                                })
                             ->end()
                             ->children()
                                 ->scalarNode('service')->defaultNull()->end()
@@ -316,7 +332,9 @@ return $v; })
                                     ->booleanNode('prefer_extension')->defaultTrue()->end()
                                     ->scalarNode('fallback_format')->defaultValue('html')->end()
                                     ->arrayNode('priorities')
-                                        ->beforeNormalization()->ifString()->then(function ($v) { return preg_split('/\s*,\s*/', $v); })->end()
+                                        ->beforeNormalization()->ifString()->then(function ($v) {
+                                            return preg_split('/\s*,\s*/', $v);
+                                        })->end()
                                         ->prototype('scalar')->end()
                                     ->end()
                                 ->end()
@@ -388,6 +406,7 @@ return $v; })
                     ->canBeEnabled()
                     ->children()
                         ->scalarNode('exception_controller')->defaultNull()->end()
+                        ->scalarNode('service')->defaultNull()->end()
                         ->arrayNode('codes')
                             ->useAttributeAsKey('name')
                             ->beforeNormalization()
@@ -411,8 +430,9 @@ return $v; })
                                 })
                             ->end()
                             ->prototype('integer')->end()
+
                             ->validate()
-                                ->ifArray()
+                            ->ifArray()
                                 ->then(function (array $items) {
                                     foreach ($items as $class => $code) {
                                         $this->testExceptionExists($class);
